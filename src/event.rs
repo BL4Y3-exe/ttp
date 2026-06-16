@@ -11,8 +11,6 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::app::{App, InputMode, Page};
-use crate::core::test_session::{SessionStatus, TypingSession};
-use crate::core::text_generator::generate_text;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
@@ -44,8 +42,8 @@ fn restore_terminal(terminal: &mut Tui) -> Result<()> {
 
 fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     while !app.should_quit {
-        terminal.draw(|frame| crate::ui::render(frame, app))?;
         update_active_session(app);
+        terminal.draw(|frame| crate::ui::render(frame, app))?;
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
@@ -70,13 +68,8 @@ fn handle_key(app: &mut App, key: KeyCode) {
 fn handle_normal_key(app: &mut App, key: KeyCode) {
     match key {
         KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Char('s') | KeyCode::Char('r') => {
-            if key == KeyCode::Char('r') || app.session.is_none() {
-                start_new_session(app);
-            }
-            app.page = Page::SpeedTest;
-            app.input_mode = InputMode::Typing;
-        }
+        KeyCode::Char('s') => app.enter_typing_mode(),
+        KeyCode::Char('r') => app.start_new_session(),
         KeyCode::Char('p') => {
             app.page = Page::History;
             app.input_mode = InputMode::Normal;
@@ -108,15 +101,11 @@ fn handle_typing_key(app: &mut App, key: KeyCode) {
             }
         }
         KeyCode::Char(character) => {
+            app.ensure_ready_session();
             if let Some(session) = app.session.as_mut() {
                 session.input_char(character);
-
-                if session.status == SessionStatus::Finished {
-                    let _ = session.result();
-                    app.page = Page::Result;
-                    app.input_mode = InputMode::Normal;
-                }
             }
+            app.complete_session_if_finished();
         }
         _ => {}
     }
@@ -138,21 +127,11 @@ fn handle_command_key(app: &mut App, key: KeyCode) {
     }
 }
 
-fn start_new_session(app: &mut App) {
-    let target_text = generate_text(app.current_mode);
-    app.session = Some(TypingSession::new(app.current_mode, target_text));
-}
-
 fn update_active_session(app: &mut App) {
     let Some(session) = app.session.as_mut() else {
         return;
     };
 
     session.update_time_status();
-
-    if app.input_mode == InputMode::Typing && session.status == SessionStatus::Finished {
-        let _ = session.result();
-        app.page = Page::Result;
-        app.input_mode = InputMode::Normal;
-    }
+    app.complete_session_if_finished();
 }

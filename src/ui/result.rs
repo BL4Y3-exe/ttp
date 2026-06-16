@@ -28,8 +28,22 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             .alignment(Alignment::Center),
         chunks[0],
     );
+    let result_text = app.last_result.as_ref().map_or_else(
+        || "result\n\ntest result will appear here".to_owned(),
+        |result| {
+            format!(
+                "result\n\nWPM: {:.0}\nAccuracy: {:.0}%\nMistakes: {}\nMode: {}\nTime: {:.2}s",
+                result.wpm,
+                result.accuracy,
+                result.mistakes,
+                result.mode.label(),
+                result.elapsed_seconds
+            )
+        },
+    );
+
     frame.render_widget(
-        Paragraph::new("result\n\ntest result will appear here")
+        Paragraph::new(result_text)
             .style(Style::default().fg(palette.text))
             .alignment(Alignment::Center),
         chunks[1],
