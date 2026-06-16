@@ -17,7 +17,7 @@ struct Cli;
 
 fn main() -> Result<()> {
     let _cli = Cli::parse();
-    let app = App::default();
+    let app = App::new();
 
     event::run(app)
 }

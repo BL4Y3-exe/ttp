@@ -23,7 +23,20 @@ impl TestMode {
         }
     }
 
-    #[allow(dead_code)]
+    pub fn from_label(input: &str) -> Option<Self> {
+        match input.trim() {
+            "10" | "10w" => Some(Self::Words(10)),
+            "25" | "25w" => Some(Self::Words(25)),
+            "50" | "50w" => Some(Self::Words(50)),
+            "100" | "100w" => Some(Self::Words(100)),
+            "15s" => Some(Self::Time(15)),
+            "30s" => Some(Self::Time(30)),
+            "60s" => Some(Self::Time(60)),
+            "120s" => Some(Self::Time(120)),
+            _ => None,
+        }
+    }
+
     pub fn mode_type(&self) -> &'static str {
         match self {
             Self::Words(_) => "words",
@@ -31,7 +44,6 @@ impl TestMode {
         }
     }
 
-    #[allow(dead_code)]
     pub fn mode_value(&self) -> u16 {
         match self {
             Self::Words(value) | Self::Time(value) => *value,
@@ -232,8 +244,26 @@ mod tests {
     fn test_mode_labels_are_correct() {
         assert_eq!(TestMode::Words(10).label(), "10w");
         assert_eq!(TestMode::Words(25).label(), "25w");
+        assert_eq!(TestMode::Words(50).label(), "50w");
+        assert_eq!(TestMode::Words(100).label(), "100w");
+        assert_eq!(TestMode::Time(15).label(), "15s");
         assert_eq!(TestMode::Time(30).label(), "30s");
+        assert_eq!(TestMode::Time(60).label(), "60s");
         assert_eq!(TestMode::Time(120).label(), "120s");
+    }
+
+    #[test]
+    fn test_mode_from_label_parses_supported_modes() {
+        assert_eq!(TestMode::from_label("30s"), Some(TestMode::Time(30)));
+        assert_eq!(TestMode::from_label("25w"), Some(TestMode::Words(25)));
+        assert_eq!(TestMode::from_label("25"), Some(TestMode::Words(25)));
+    }
+
+    #[test]
+    fn test_mode_from_label_rejects_invalid_labels() {
+        assert_eq!(TestMode::from_label("90s"), None);
+        assert_eq!(TestMode::from_label("5w"), None);
+        assert_eq!(TestMode::from_label("theme"), None);
     }
 
     #[test]

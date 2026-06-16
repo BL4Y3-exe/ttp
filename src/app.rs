@@ -1,6 +1,9 @@
 use crate::command::{parse_command, Command, CommandError};
 use crate::core::test_session::{SessionStatus, TestMode, TestResult, TypingSession};
 use crate::core::text_generator::generate_text;
+use crate::storage::config::{load_config, save_config, AppConfig};
+use crate::storage::database::Database;
+use crate::storage::models::SavedTestResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -26,27 +29,75 @@ pub struct App {
     pub session: Option<TypingSession>,
     pub last_result: Option<TestResult>,
     pub command_error: Option<String>,
+    pub config: AppConfig,
+    pub database: Option<Database>,
+    result_saved: bool,
 }
 
 impl Default for App {
     fn default() -> Self {
+        let mode = TestMode::default();
+
         Self {
             should_quit: false,
             page: Page::SpeedTest,
             input_mode: InputMode::Normal,
             command_input: String::new(),
-            current_mode: TestMode::default(),
-            session: Some(TypingSession::new(
-                TestMode::default(),
-                generate_text(TestMode::default()),
-            )),
+            current_mode: mode,
+            session: Some(TypingSession::new(mode, generate_text(mode))),
             last_result: None,
             command_error: None,
+            config: AppConfig::default(),
+            database: None,
+            result_saved: false,
         }
     }
 }
 
 impl App {
+    pub fn new() -> Self {
+        let mut storage_error = None;
+
+        let config = match load_config() {
+            Ok(config) => config,
+            Err(error) => {
+                storage_error = Some(format!("config error: {error:#}"));
+                AppConfig::default()
+            }
+        };
+
+        let current_mode =
+            TestMode::from_label(&config.last_selected_mode).unwrap_or_else(TestMode::default);
+
+        let database = match Database::open().and_then(|database| {
+            database.init()?;
+            Ok(database)
+        }) {
+            Ok(database) => Some(database),
+            Err(error) => {
+                storage_error = Some(format!("storage error: {error:#}"));
+                None
+            }
+        };
+
+        Self {
+            should_quit: false,
+            page: Page::SpeedTest,
+            input_mode: InputMode::Normal,
+            command_input: String::new(),
+            current_mode,
+            session: Some(TypingSession::new(
+                current_mode,
+                generate_text(current_mode),
+            )),
+            last_result: None,
+            command_error: storage_error,
+            config,
+            database,
+            result_saved: false,
+        }
+    }
+
     pub fn input_mode_label(&self) -> &'static str {
         match self.input_mode {
             InputMode::Normal => "normal",
@@ -61,6 +112,7 @@ impl App {
             self.current_mode,
             generate_text(self.current_mode),
         ));
+        self.result_saved = false;
         self.page = Page::SpeedTest;
         self.input_mode = InputMode::Typing;
     }
@@ -78,6 +130,7 @@ impl App {
                 self.current_mode,
                 generate_text(self.current_mode),
             ));
+            self.result_saved = false;
         }
     }
 
@@ -93,15 +146,17 @@ impl App {
             return;
         };
 
-        if session.status != SessionStatus::Finished {
+        if self.result_saved || session.status != SessionStatus::Finished {
             return;
         }
 
         if let Some(result) = session.result() {
             self.current_mode = result.mode;
+            self.save_result(&result);
             self.last_result = Some(result);
         }
 
+        self.result_saved = true;
         self.page = Page::Result;
         self.input_mode = InputMode::Normal;
     }
@@ -124,15 +179,33 @@ impl App {
         match parse_command(&input) {
             Ok(Command::SetMode(mode)) => {
                 self.current_mode = mode;
+                self.config.last_selected_mode = mode.label();
+                let config_error = if let Err(error) = save_config(&self.config) {
+                    Some(format!("config error: {error:#}"))
+                } else {
+                    None
+                };
                 self.command_input.clear();
-                self.command_error = None;
                 self.start_new_session();
+                self.command_error = config_error;
             }
             Err(error) => {
                 self.command_input.clear();
                 self.command_error = Some(command_error_message(error));
                 self.input_mode = InputMode::Normal;
             }
+        }
+    }
+
+    fn save_result(&mut self, result: &TestResult) {
+        let Some(database) = self.database.as_ref() else {
+            return;
+        };
+
+        let saved_result = SavedTestResult::from_test_result(result);
+
+        if let Err(error) = database.insert_test_result(&saved_result) {
+            self.command_error = Some(format!("storage error: {error:#}"));
         }
     }
 }
