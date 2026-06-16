@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local};
 use rusqlite::{params, Connection};
 
@@ -18,8 +18,19 @@ impl std::fmt::Debug for Database {
 
 impl Database {
     pub fn open() -> Result<Self> {
-        let path = database_path();
+        let mut last_error = None;
 
+        for path in database_paths() {
+            match Self::open_at(path) {
+                Ok(database) => return Ok(database),
+                Err(error) => last_error = Some(error),
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| anyhow!("no database paths available")))
+    }
+
+    fn open_at(path: PathBuf) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create data dir {}", parent.display()))?;
@@ -152,12 +163,27 @@ impl Database {
     }
 }
 
-fn database_path() -> PathBuf {
+fn database_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::with_capacity(2);
+
     if let Some(data_dir) = dirs::data_dir() {
-        data_dir.join("ttp").join("ttp.db")
-    } else {
-        PathBuf::from(".ttp").join("ttp.db")
+        paths.push(data_dir.join("ttp").join("ttp.db"));
     }
+
+    paths.push(PathBuf::from(".ttp").join("ttp.db"));
+    dedupe_paths(paths)
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut deduped = Vec::with_capacity(paths.len());
+
+    for path in paths {
+        if !deduped.contains(&path) {
+            deduped.push(path);
+        }
+    }
+
+    deduped
 }
 
 #[cfg(test)]

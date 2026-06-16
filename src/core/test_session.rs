@@ -4,7 +4,6 @@ use crate::core::scoring::{calculate_accuracy, calculate_wpm};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestMode {
-    #[allow(dead_code)]
     Words(u16),
     Time(u16),
 }
@@ -82,7 +81,6 @@ pub struct TypingSession {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct TestResult {
     pub mode: TestMode,
     pub wpm: f64,
