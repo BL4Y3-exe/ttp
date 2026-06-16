@@ -1,0 +1,22 @@
+[package]
+name = "ttp"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal typing practice app inspired by Monkeytype."
+license = "MIT"
+
+[[bin]]
+name = "ttp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dirs = "5"
+rand = "0.8"
+ratatui = "0.29"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
