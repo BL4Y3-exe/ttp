@@ -1,3 +1,4 @@
+use crate::command::{parse_command, Command, CommandError};
 use crate::core::test_session::{SessionStatus, TestMode, TestResult, TypingSession};
 use crate::core::text_generator::generate_text;
 
@@ -24,6 +25,7 @@ pub struct App {
     pub current_mode: TestMode,
     pub session: Option<TypingSession>,
     pub last_result: Option<TestResult>,
+    pub command_error: Option<String>,
 }
 
 impl Default for App {
@@ -39,6 +41,7 @@ impl Default for App {
                 generate_text(TestMode::default()),
             )),
             last_result: None,
+            command_error: None,
         }
     }
 }
@@ -53,6 +56,7 @@ impl App {
     }
 
     pub fn start_new_session(&mut self) {
+        self.command_error = None;
         self.session = Some(TypingSession::new(
             self.current_mode,
             generate_text(self.current_mode),
@@ -78,6 +82,7 @@ impl App {
     }
 
     pub fn enter_typing_mode(&mut self) {
+        self.command_error = None;
         self.ensure_ready_session();
         self.page = Page::SpeedTest;
         self.input_mode = InputMode::Typing;
@@ -99,5 +104,42 @@ impl App {
 
         self.page = Page::Result;
         self.input_mode = InputMode::Normal;
+    }
+
+    pub fn enter_command_mode(&mut self) {
+        self.command_input.clear();
+        self.command_error = None;
+        self.input_mode = InputMode::Command;
+    }
+
+    pub fn cancel_command_mode(&mut self) {
+        self.command_input.clear();
+        self.command_error = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn execute_command(&mut self) {
+        let input = self.command_input.clone();
+
+        match parse_command(&input) {
+            Ok(Command::SetMode(mode)) => {
+                self.current_mode = mode;
+                self.command_input.clear();
+                self.command_error = None;
+                self.start_new_session();
+            }
+            Err(error) => {
+                self.command_input.clear();
+                self.command_error = Some(command_error_message(error));
+                self.input_mode = InputMode::Normal;
+            }
+        }
+    }
+}
+
+fn command_error_message(error: CommandError) -> String {
+    match error {
+        CommandError::Empty => "empty command".to_owned(),
+        CommandError::Unknown(command) => format!("unknown command: {command}"),
     }
 }

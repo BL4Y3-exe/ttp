@@ -16,5 +16,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
     if app.input_mode == InputMode::Command {
         components::top_panel::render_command_line(frame, &app.command_input);
+    } else if let Some(error) = app.command_error.as_deref() {
+        components::top_panel::render_command_error(frame, error);
     }
 }

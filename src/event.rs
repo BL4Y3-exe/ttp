@@ -75,10 +75,10 @@ fn handle_normal_key(app: &mut App, key: KeyCode) {
             app.input_mode = InputMode::Normal;
         }
         KeyCode::Char(':') => {
-            app.command_input.clear();
-            app.input_mode = InputMode::Command;
+            app.enter_command_mode();
         }
         KeyCode::Esc => {
+            app.command_error = None;
             app.page = Page::SpeedTest;
             app.input_mode = InputMode::Normal;
         }
@@ -92,6 +92,7 @@ fn handle_typing_key(app: &mut App, key: KeyCode) {
             if let Some(session) = app.session.as_mut() {
                 session.abort();
             }
+            app.command_error = None;
             app.page = Page::SpeedTest;
             app.input_mode = InputMode::Normal;
         }
@@ -113,10 +114,8 @@ fn handle_typing_key(app: &mut App, key: KeyCode) {
 
 fn handle_command_key(app: &mut App, key: KeyCode) {
     match key {
-        KeyCode::Enter | KeyCode::Esc => {
-            app.command_input.clear();
-            app.input_mode = InputMode::Normal;
-        }
+        KeyCode::Enter => app.execute_command(),
+        KeyCode::Esc => app.cancel_command_mode(),
         KeyCode::Backspace => {
             app.command_input.pop();
         }
