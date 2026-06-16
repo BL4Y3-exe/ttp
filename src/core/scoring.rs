@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 pub fn calculate_wpm(correct_chars: usize, elapsed_seconds: f64) -> f64 {
     if elapsed_seconds <= 0.0 {
         return 0.0;
@@ -8,7 +7,6 @@ pub fn calculate_wpm(correct_chars: usize, elapsed_seconds: f64) -> f64 {
     (correct_chars as f64 / 5.0) / minutes
 }
 
-#[allow(dead_code)]
 pub fn calculate_accuracy(correct_chars: usize, total_typed_chars: usize) -> f64 {
     if total_typed_chars == 0 {
         return 0.0;
@@ -29,5 +27,15 @@ mod tests {
     #[test]
     fn accuracy_is_zero_without_input() {
         assert_eq!(calculate_accuracy(0, 0), 0.0);
+    }
+
+    #[test]
+    fn calculates_accuracy_percentage() {
+        assert_eq!(calculate_accuracy(45, 50), 90.0);
+    }
+
+    #[test]
+    fn wpm_is_zero_without_elapsed_time() {
+        assert_eq!(calculate_wpm(100, 0.0), 0.0);
     }
 }

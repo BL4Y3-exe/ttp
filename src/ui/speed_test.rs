@@ -34,8 +34,18 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         .block(Block::default());
     frame.render_widget(body, chunks[1]);
 
-    let footer = Paragraph::new(format!("mode: {}", app.input_mode_label()))
-        .style(Style::default().fg(palette.muted))
-        .alignment(Alignment::Center);
+    let typed_chars = app
+        .session
+        .as_ref()
+        .map(|session| session.typed_input.chars().count())
+        .unwrap_or(0);
+    let footer = Paragraph::new(format!(
+        "mode: {} | test: {} | typed: {}",
+        app.input_mode_label(),
+        app.current_mode.label(),
+        typed_chars
+    ))
+    .style(Style::default().fg(palette.muted))
+    .alignment(Alignment::Center);
     frame.render_widget(footer, chunks[2]);
 }

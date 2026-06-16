@@ -11,6 +11,8 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::app::{App, InputMode, Page};
+use crate::core::test_session::{SessionStatus, TypingSession};
+use crate::core::text_generator::generate_text;
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
@@ -43,6 +45,7 @@ fn restore_terminal(terminal: &mut Tui) -> Result<()> {
 fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     while !app.should_quit {
         terminal.draw(|frame| crate::ui::render(frame, app))?;
+        update_active_session(app);
 
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
@@ -68,6 +71,9 @@ fn handle_normal_key(app: &mut App, key: KeyCode) {
     match key {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('s') | KeyCode::Char('r') => {
+            if key == KeyCode::Char('r') || app.session.is_none() {
+                start_new_session(app);
+            }
             app.page = Page::SpeedTest;
             app.input_mode = InputMode::Typing;
         }
@@ -88,9 +94,31 @@ fn handle_normal_key(app: &mut App, key: KeyCode) {
 }
 
 fn handle_typing_key(app: &mut App, key: KeyCode) {
-    if key == KeyCode::Esc {
-        app.page = Page::SpeedTest;
-        app.input_mode = InputMode::Normal;
+    match key {
+        KeyCode::Esc => {
+            if let Some(session) = app.session.as_mut() {
+                session.abort();
+            }
+            app.page = Page::SpeedTest;
+            app.input_mode = InputMode::Normal;
+        }
+        KeyCode::Backspace => {
+            if let Some(session) = app.session.as_mut() {
+                session.backspace();
+            }
+        }
+        KeyCode::Char(character) => {
+            if let Some(session) = app.session.as_mut() {
+                session.input_char(character);
+
+                if session.status == SessionStatus::Finished {
+                    let _ = session.result();
+                    app.page = Page::Result;
+                    app.input_mode = InputMode::Normal;
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -107,5 +135,24 @@ fn handle_command_key(app: &mut App, key: KeyCode) {
             app.command_input.push(character);
         }
         _ => {}
+    }
+}
+
+fn start_new_session(app: &mut App) {
+    let target_text = generate_text(app.current_mode);
+    app.session = Some(TypingSession::new(app.current_mode, target_text));
+}
+
+fn update_active_session(app: &mut App) {
+    let Some(session) = app.session.as_mut() else {
+        return;
+    };
+
+    session.update_time_status();
+
+    if app.input_mode == InputMode::Typing && session.status == SessionStatus::Finished {
+        let _ = session.result();
+        app.page = Page::Result;
+        app.input_mode = InputMode::Normal;
     }
 }

@@ -1,3 +1,5 @@
+use crate::core::test_session::{TestMode, TypingSession};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     SpeedTest,
@@ -19,6 +21,8 @@ pub struct App {
     pub page: Page,
     pub input_mode: InputMode,
     pub command_input: String,
+    pub current_mode: TestMode,
+    pub session: Option<TypingSession>,
 }
 
 impl Default for App {
@@ -28,6 +32,8 @@ impl Default for App {
             page: Page::SpeedTest,
             input_mode: InputMode::Normal,
             command_input: String::new(),
+            current_mode: TestMode::default(),
+            session: None,
         }
     }
 }
