@@ -31,6 +31,7 @@ pub struct App {
     pub command_error: Option<String>,
     pub config: AppConfig,
     pub database: Option<Database>,
+    pub recent_results: Vec<SavedTestResult>,
     result_saved: bool,
 }
 
@@ -49,6 +50,7 @@ impl Default for App {
             command_error: None,
             config: AppConfig::default(),
             database: None,
+            recent_results: Vec::new(),
             result_saved: false,
         }
     }
@@ -94,6 +96,7 @@ impl App {
             command_error: storage_error,
             config,
             database,
+            recent_results: Vec::new(),
             result_saved: false,
         }
     }
@@ -206,6 +209,27 @@ impl App {
 
         if let Err(error) = database.insert_test_result(&saved_result) {
             self.command_error = Some(format!("storage error: {error:#}"));
+        }
+    }
+
+    pub fn open_history(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.page = Page::History;
+
+        let Some(database) = self.database.as_ref() else {
+            self.recent_results.clear();
+            return;
+        };
+
+        match database.recent_test_results(15) {
+            Ok(results) => {
+                self.recent_results = results;
+                self.command_error = None;
+            }
+            Err(error) => {
+                self.recent_results.clear();
+                self.command_error = Some(format!("storage error: {error:#}"));
+            }
         }
     }
 }

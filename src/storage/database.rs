@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Local};
 use rusqlite::{params, Connection};
 
 use crate::storage::models::SavedTestResult;
@@ -86,6 +87,56 @@ impl Database {
         Ok(())
     }
 
+    pub fn recent_test_results(&self, limit: usize) -> Result<Vec<SavedTestResult>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT
+                    id,
+                    mode_type,
+                    mode_value,
+                    wpm,
+                    accuracy,
+                    mistakes,
+                    correct_chars,
+                    incorrect_chars,
+                    total_typed_chars,
+                    elapsed_seconds,
+                    created_at
+                FROM test_results
+                ORDER BY id DESC
+                LIMIT ?1",
+            )
+            .context("failed to prepare recent test results query")?;
+
+        let rows = statement
+            .query_map(params![limit], |row| {
+                let created_at: String = row.get(10)?;
+                let created_at = DateTime::parse_from_rfc3339(&created_at)
+                    .map(|timestamp| timestamp.with_timezone(&Local))
+                    .unwrap_or_else(|_| Local::now());
+
+                Ok(SavedTestResult {
+                    id: row.get(0)?,
+                    mode_type: row.get(1)?,
+                    mode_value: row.get(2)?,
+                    wpm: row.get(3)?,
+                    accuracy: row.get(4)?,
+                    mistakes: row.get::<_, i64>(5)? as usize,
+                    correct_chars: row.get::<_, i64>(6)? as usize,
+                    incorrect_chars: row.get::<_, i64>(7)? as usize,
+                    total_typed_chars: row.get::<_, i64>(8)? as usize,
+                    elapsed_seconds: row.get(9)?,
+                    created_at,
+                })
+            })
+            .context("failed to load recent test results")?;
+
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("failed to read recent test result rows")
+    }
+
     #[cfg(test)]
     fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory().context("failed to open in-memory database")?;
@@ -137,5 +188,33 @@ mod tests {
             .expect("insert test result");
 
         assert_eq!(database.test_result_count().expect("count rows"), 1);
+    }
+
+    #[test]
+    fn loads_recent_test_results_newest_first() {
+        let database = Database::open_in_memory().expect("open in-memory database");
+        database.init().expect("initialize schema");
+
+        for wpm in [70.0, 80.0] {
+            let result = TestResult {
+                mode: TestMode::Time(30),
+                wpm,
+                accuracy: 98.0,
+                mistakes: 1,
+                correct_chars: 120,
+                incorrect_chars: 1,
+                total_typed_chars: 121,
+                elapsed_seconds: 20.0,
+            };
+            database
+                .insert_test_result(&SavedTestResult::from_test_result(&result))
+                .expect("insert test result");
+        }
+
+        let results = database.recent_test_results(15).expect("load recent");
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].wpm, 80.0);
+        assert_eq!(results[1].wpm, 70.0);
     }
 }

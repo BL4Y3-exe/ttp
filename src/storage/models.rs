@@ -34,6 +34,14 @@ impl SavedTestResult {
             created_at: Local::now(),
         }
     }
+
+    pub fn mode_label(&self) -> String {
+        match self.mode_type.as_str() {
+            "time" => format!("{}s", self.mode_value),
+            "words" => format!("{}w", self.mode_value),
+            _ => format!("{}{}", self.mode_value, self.mode_type),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -66,5 +74,43 @@ mod tests {
         assert_eq!(saved.incorrect_chars, 3);
         assert_eq!(saved.total_typed_chars, 203);
         assert_eq!(saved.elapsed_seconds, 30.0);
+    }
+
+    #[test]
+    fn formats_time_mode_label() {
+        let result = TestResult {
+            mode: TestMode::Time(30),
+            wpm: 80.0,
+            accuracy: 95.0,
+            mistakes: 3,
+            correct_chars: 200,
+            incorrect_chars: 3,
+            total_typed_chars: 203,
+            elapsed_seconds: 30.0,
+        };
+
+        assert_eq!(
+            SavedTestResult::from_test_result(&result).mode_label(),
+            "30s"
+        );
+    }
+
+    #[test]
+    fn formats_words_mode_label() {
+        let result = TestResult {
+            mode: TestMode::Words(25),
+            wpm: 80.0,
+            accuracy: 95.0,
+            mistakes: 3,
+            correct_chars: 200,
+            incorrect_chars: 3,
+            total_typed_chars: 203,
+            elapsed_seconds: 30.0,
+        };
+
+        assert_eq!(
+            SavedTestResult::from_test_result(&result).mode_label(),
+            "25w"
+        );
     }
 }

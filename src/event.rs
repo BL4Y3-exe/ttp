@@ -70,10 +70,7 @@ fn handle_normal_key(app: &mut App, key: KeyCode) {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('s') => app.enter_typing_mode(),
         KeyCode::Char('r') => app.start_new_session(),
-        KeyCode::Char('p') => {
-            app.page = Page::History;
-            app.input_mode = InputMode::Normal;
-        }
+        KeyCode::Char('p') => app.open_history(),
         KeyCode::Char(':') => {
             app.enter_command_mode();
         }
