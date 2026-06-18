@@ -327,11 +327,10 @@ The following keys work from Normal mode:
 
 ```txt
 s    go to Speed-test page and enter Typing mode
-r    restart current/last test mode with new text and enter Typing mode
 p    open History page
 q    quit app
 :    enter Command mode
-ESC  return to Speed-test page in Normal mode, where applicable
+ESC  return to Normal mode
 ```
 
 ### 8.2 Speed-test Page / Normal Mode
@@ -340,7 +339,6 @@ When the user is on the Speed-test page in Normal mode:
 
 ```txt
 s    enter Typing mode with the current generated text
-r    generate new text in the current mode and enter Typing mode
 p    open History page
 q    quit app
 :    enter Command mode
@@ -441,12 +439,11 @@ The Result page is always in Normal mode.
 Controls:
 
 ```txt
-r    restart same mode with new text and enter Typing mode
 s    start a new test in the current/last mode and enter Typing mode
 p    open History page
 q    quit app
 :    enter Command mode
-ESC  return to Speed-test page in Normal mode
+ESC  stay on Result page in Normal mode
 ```
 
 ### 8.6 History Page Controls
@@ -457,10 +454,9 @@ Controls:
 
 ```txt
 s    go to Speed-test page and enter Typing mode
-r    restart current/last mode with new text and enter Typing mode
 q    quit app
 :    enter Command mode
-ESC  return to Speed-test page in Normal mode
+ESC  stay on History page in Normal mode
 ```
 
 For `v0.1`, advanced navigation inside History page is optional.
@@ -881,4 +877,3 @@ Recommended implementation order:
 ```
 
 This order should keep the project stable and prevent UI complexity from blocking the core logic.
-

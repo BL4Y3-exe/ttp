@@ -69,14 +69,12 @@ fn handle_normal_key(app: &mut App, key: KeyCode) {
     match key {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('s') => app.enter_typing_mode(),
-        KeyCode::Char('r') => app.start_new_session(),
         KeyCode::Char('p') => app.open_history(),
         KeyCode::Char(':') => {
             app.enter_command_mode();
         }
         KeyCode::Esc => {
             app.command_error = None;
-            app.page = Page::SpeedTest;
             app.input_mode = InputMode::Normal;
         }
         _ => {}
@@ -130,4 +128,88 @@ fn update_active_session(app: &mut App) {
 
     session.update_time_status();
     app.complete_session_if_finished();
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::KeyCode;
+
+    use super::handle_key;
+    use crate::app::{App, InputMode, Page};
+
+    #[test]
+    fn normal_escape_keeps_current_page() {
+        let mut app = App::default();
+        app.page = Page::Result;
+        app.input_mode = InputMode::Normal;
+
+        handle_key(&mut app, KeyCode::Esc);
+
+        assert_eq!(app.page, Page::Result);
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn repeated_normal_escape_is_idempotent() {
+        let mut app = App::default();
+        app.page = Page::History;
+        app.input_mode = InputMode::Normal;
+
+        handle_key(&mut app, KeyCode::Esc);
+        handle_key(&mut app, KeyCode::Esc);
+        handle_key(&mut app, KeyCode::Esc);
+
+        assert_eq!(app.page, Page::History);
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn r_does_nothing_in_normal_mode() {
+        for page in [Page::SpeedTest, Page::Result, Page::History] {
+            let mut app = App::default();
+            app.page = page;
+            app.input_mode = InputMode::Normal;
+            let target_text = app
+                .session
+                .as_ref()
+                .map(|session| session.target_text.clone());
+
+            handle_key(&mut app, KeyCode::Char('r'));
+
+            assert_eq!(app.page, page);
+            assert_eq!(app.input_mode, InputMode::Normal);
+            assert_eq!(
+                app.session
+                    .as_ref()
+                    .map(|session| session.target_text.clone()),
+                target_text
+            );
+        }
+    }
+
+    #[test]
+    fn s_still_starts_typing_from_result_page() {
+        let mut app = App::default();
+        app.page = Page::Result;
+        app.input_mode = InputMode::Normal;
+
+        handle_key(&mut app, KeyCode::Char('s'));
+
+        assert_eq!(app.page, Page::SpeedTest);
+        assert_eq!(app.input_mode, InputMode::Typing);
+    }
+
+    #[test]
+    fn command_escape_closes_command_mode_without_navigation() {
+        let mut app = App::default();
+        app.page = Page::Result;
+        app.input_mode = InputMode::Command;
+        app.command_input = "30s".to_owned();
+
+        handle_key(&mut app, KeyCode::Esc);
+
+        assert_eq!(app.page, Page::Result);
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.command_input.is_empty());
+    }
 }

@@ -28,11 +28,10 @@ cargo run
 Normal mode:
 
 - `s` start typing with the current test
-- `r` restart with new text
 - `p` open recent history
 - `q` quit
 - `:` enter command mode
-- `Esc` return to Speed-test page
+- `Esc` return to normal mode
 
 Typing mode:
 
