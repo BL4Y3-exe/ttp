@@ -4,8 +4,15 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::{App, InputMode};
+use crate::core::test_session::TestMode;
 use crate::theme;
 use crate::ui::components::typing_area;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TypingScreenLayout {
+    text_area: Rect,
+    status_area: Option<Rect>,
+}
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
@@ -32,12 +39,21 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     .alignment(Alignment::Center);
     frame.render_widget(header, chunks[0]);
 
-    let typing_area = typing_text_area(area);
+    let typing_layout = typing_screen_layout(area);
 
     if let Some(session) = app.session.as_ref() {
+        if app.input_mode == InputMode::Typing {
+            if let Some(status_area) = typing_layout.status_area {
+                let status = Paragraph::new(format_status(session))
+                    .style(Style::default().fg(palette.muted))
+                    .alignment(Alignment::Left);
+                frame.render_widget(status, status_area);
+            }
+        }
+
         typing_area::render(
             frame,
-            typing_area,
+            typing_layout.text_area,
             session,
             app.input_mode == InputMode::Typing,
         );
@@ -45,13 +61,11 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         let empty = Paragraph::new("speed-test")
             .style(Style::default().fg(palette.text))
             .alignment(Alignment::Left);
-        frame.render_widget(empty, typing_area);
+        frame.render_widget(empty, typing_layout.text_area);
     }
 
     let footer_text = if app.input_mode == InputMode::Normal {
         "press s to start typing".to_owned()
-    } else if let Some(session) = app.session.as_ref() {
-        format_status(session)
     } else {
         String::new()
     };
@@ -62,9 +76,12 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     frame.render_widget(footer, chunks[2]);
 }
 
-fn typing_text_area(area: Rect) -> Rect {
+fn typing_screen_layout(area: Rect) -> TypingScreenLayout {
     if area.width == 0 || area.height == 0 {
-        return area;
+        return TypingScreenLayout {
+            text_area: area,
+            status_area: None,
+        };
     }
 
     let left_margin = ((u32::from(area.width) * 9) / 100) as u16;
@@ -79,23 +96,49 @@ fn typing_text_area(area: Rect) -> Rect {
         (area.height / 2).saturating_sub(1)
     };
 
-    Rect {
+    let text_area = Rect {
         x: area.x.saturating_add(left_margin),
         y: area.y.saturating_add(y_offset),
         width: text_width,
         height: text_height,
+    };
+
+    let status_area = status_area_above(text_area, area.y);
+
+    TypingScreenLayout {
+        text_area,
+        status_area,
     }
+}
+
+fn status_area_above(text_area: Rect, min_y: u16) -> Option<Rect> {
+    if text_area.y <= min_y {
+        return None;
+    }
+
+    let y = if text_area.y > min_y.saturating_add(1) {
+        text_area.y.saturating_sub(2)
+    } else {
+        text_area.y.saturating_sub(1)
+    };
+
+    Some(Rect {
+        x: text_area.x,
+        y,
+        width: text_area.width,
+        height: 1,
+    })
 }
 
 fn format_status(session: &crate::core::test_session::TypingSession) -> String {
     match session.mode {
-        crate::core::test_session::TestMode::Time(seconds) => {
+        TestMode::Time(seconds) => {
             let remaining = (f64::from(seconds) - session.elapsed_seconds()).max(0.0);
             format!("{remaining:.0}s")
         }
-        crate::core::test_session::TestMode::Words(_) => {
-            let total = session.target_text.chars().count();
-            format!("{} / {}", session.current_index.min(total), total)
+        TestMode::Words(total_words) => {
+            let completed_words = session.completed_words().min(usize::from(total_words));
+            format!("{completed_words}/{total_words}")
         }
     }
 }
@@ -104,29 +147,39 @@ fn format_status(session: &crate::core::test_session::TypingSession) -> String {
 mod tests {
     use ratatui::layout::Rect;
 
-    use super::typing_text_area;
+    use super::typing_screen_layout;
 
     #[test]
     fn uses_nine_eighty_two_nine_horizontal_split() {
-        let area = typing_text_area(Rect::new(0, 0, 100, 24));
+        let layout = typing_screen_layout(Rect::new(0, 0, 100, 24));
 
-        assert_eq!(area.x, 9);
-        assert_eq!(area.width, 82);
+        assert_eq!(layout.text_area.x, 9);
+        assert_eq!(layout.text_area.width, 82);
     }
 
     #[test]
     fn centers_three_line_typing_area_vertically() {
-        let area = typing_text_area(Rect::new(0, 0, 100, 25));
+        let layout = typing_screen_layout(Rect::new(0, 0, 100, 25));
 
-        assert_eq!(area.y, 11);
-        assert_eq!(area.height, 3);
+        assert_eq!(layout.text_area.y, 11);
+        assert_eq!(layout.text_area.height, 3);
     }
 
     #[test]
     fn clamps_for_small_terminals() {
-        let area = typing_text_area(Rect::new(0, 0, 2, 2));
+        let layout = typing_screen_layout(Rect::new(0, 0, 2, 2));
 
-        assert_eq!(area.width, 2);
-        assert_eq!(area.height, 2);
+        assert_eq!(layout.text_area.width, 2);
+        assert_eq!(layout.text_area.height, 2);
+    }
+
+    #[test]
+    fn status_area_aligns_with_text_area_above_text() {
+        let layout = typing_screen_layout(Rect::new(0, 0, 100, 24));
+        let status_area = layout.status_area.expect("status area");
+
+        assert_eq!(status_area.x, layout.text_area.x);
+        assert_eq!(status_area.width, layout.text_area.width);
+        assert!(status_area.y < layout.text_area.y);
     }
 }

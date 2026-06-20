@@ -35,6 +35,7 @@ fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
     let typed_chars: Vec<char> = session.typed_input.chars().collect();
     let visible_lines = visible_lines(&target_chars, width, session.current_index);
     let mut lines = Vec::with_capacity(visible_lines.len());
+    let width = usize::from(width).max(1);
 
     for visual_line in &visible_lines {
         let mut spans = Vec::with_capacity(visual_line.end.saturating_sub(visual_line.start));
@@ -73,6 +74,22 @@ fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
                     expected.to_string(),
                     Style::default().fg(Color::DarkGray),
                 ));
+            }
+        }
+
+        if hidden_boundary_caret(&target_chars, *visual_line, session.current_index) {
+            let caret = Span::styled(
+                " ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            if spans.len() < width {
+                spans.push(caret);
+            } else if let Some(last_span) = spans.last_mut() {
+                *last_span = caret;
             }
         }
 
@@ -219,9 +236,18 @@ fn first_visible_line(active_line: usize, total_lines: usize) -> usize {
     }
 }
 
+fn hidden_boundary_caret(target_chars: &[char], line: VisualLine, current_index: usize) -> bool {
+    current_index == line.end
+        && target_chars
+            .get(current_index)
+            .is_some_and(|ch| ch.is_whitespace())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{active_line_index, first_visible_line, wrap_lines, VisualLine};
+    use super::{
+        active_line_index, first_visible_line, hidden_boundary_caret, wrap_lines, VisualLine,
+    };
 
     fn chars(input: &str) -> Vec<char> {
         input.chars().collect()
@@ -284,6 +310,15 @@ mod tests {
 
         assert_eq!(active_line_index(&lines, 5), 0);
         assert_eq!(active_line_index(&lines, 6), 1);
+    }
+
+    #[test]
+    fn detects_caret_on_hidden_boundary_space() {
+        let target_chars = chars("hello world");
+        let lines = wrap_lines(&target_chars, 5);
+
+        assert!(hidden_boundary_caret(&target_chars, lines[0], 5));
+        assert!(!hidden_boundary_caret(&target_chars, lines[1], 6));
     }
 
     #[test]

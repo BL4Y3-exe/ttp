@@ -180,6 +180,10 @@ impl TypingSession {
         end.duration_since(started_at).as_secs_f64()
     }
 
+    pub fn completed_words(&self) -> usize {
+        completed_words_at(&self.target_text, self.current_index)
+    }
+
     pub fn result(&self) -> Option<TestResult> {
         if self.status != SessionStatus::Finished {
             return None;
@@ -230,6 +234,39 @@ impl TypingSession {
             }
         }
     }
+}
+
+fn completed_words_at(target_text: &str, current_index: usize) -> usize {
+    let chars = target_text.chars().collect::<Vec<_>>();
+    let mut completed = 0;
+    let mut index = 0;
+
+    while index < chars.len() {
+        while index < chars.len() && chars[index].is_whitespace() {
+            index += 1;
+        }
+
+        if index >= chars.len() {
+            break;
+        }
+
+        let word_start = index;
+
+        while index < chars.len() && !chars[index].is_whitespace() {
+            index += 1;
+        }
+
+        let word_end = index;
+        let is_final_word = index >= chars.len();
+        let passed_boundary = current_index > word_end;
+        let completed_final_word = is_final_word && current_index >= word_end;
+
+        if word_end > word_start && (passed_boundary || completed_final_word) {
+            completed += 1;
+        }
+    }
+
+    completed
 }
 
 #[cfg(test)]
@@ -390,5 +427,29 @@ mod tests {
         session.input_char('a');
 
         assert_eq!(session.status, SessionStatus::Running);
+    }
+
+    #[test]
+    fn completed_words_counts_words_after_boundary_space() {
+        let mut session = TypingSession::new(TestMode::Words(2), "hello world".to_owned());
+
+        for character in "hello".chars() {
+            session.input_char(character);
+        }
+        assert_eq!(session.completed_words(), 0);
+
+        session.input_char(' ');
+        assert_eq!(session.completed_words(), 1);
+    }
+
+    #[test]
+    fn completed_words_counts_final_word_without_trailing_space() {
+        let mut session = TypingSession::new(TestMode::Words(2), "hello world".to_owned());
+
+        for character in "hello world".chars() {
+            session.input_char(character);
+        }
+
+        assert_eq!(session.completed_words(), 2);
     }
 }
