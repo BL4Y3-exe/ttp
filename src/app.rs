@@ -33,6 +33,7 @@ pub struct App {
     pub database: Option<Database>,
     pub recent_results: Vec<SavedTestResult>,
     pub all_results: Vec<SavedTestResult>,
+    pub stats_scroll_offset: usize,
     result_saved: bool,
 }
 
@@ -53,6 +54,7 @@ impl Default for App {
             database: None,
             recent_results: Vec::new(),
             all_results: Vec::new(),
+            stats_scroll_offset: 0,
             result_saved: false,
         }
     }
@@ -100,6 +102,7 @@ impl App {
             database,
             recent_results: Vec::new(),
             all_results: Vec::new(),
+            stats_scroll_offset: 0,
             result_saved: false,
         }
     }
@@ -218,6 +221,7 @@ impl App {
     pub fn open_history(&mut self) {
         self.input_mode = InputMode::Normal;
         self.page = Page::History;
+        self.stats_scroll_offset = 0;
 
         let Some(database) = self.database.as_ref() else {
             self.recent_results.clear();
@@ -239,6 +243,18 @@ impl App {
                 self.all_results.clear();
                 self.command_error = Some(format!("storage error: {error:#}"));
             }
+        }
+    }
+
+    pub fn scroll_stats_down(&mut self) {
+        if self.page == Page::History {
+            self.stats_scroll_offset = self.stats_scroll_offset.saturating_add(1);
+        }
+    }
+
+    pub fn scroll_stats_up(&mut self) {
+        if self.page == Page::History {
+            self.stats_scroll_offset = self.stats_scroll_offset.saturating_sub(1);
         }
     }
 }

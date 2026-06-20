@@ -1,7 +1,7 @@
 use chrono::Local;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::App;
@@ -78,15 +78,19 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     );
 
     frame.render_widget(
-        Paragraph::new(profile_text(&app.all_results, &app.recent_results))
-            .style(Style::default().fg(palette.text))
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false }),
+        Paragraph::new(visible_profile_text(
+            &app.all_results,
+            &app.recent_results,
+            app.stats_scroll_offset,
+            usize::from(chunks[1].height),
+        ))
+        .style(Style::default().fg(palette.text))
+        .alignment(Alignment::Left),
         chunks[1],
     );
 
     frame.render_widget(
-        Paragraph::new(format!("mode: {}", app.input_mode_label()))
+        Paragraph::new(format!("mode: {}    j/k: scroll", app.input_mode_label()))
             .style(Style::default().fg(palette.muted))
             .alignment(Alignment::Center),
         chunks[2],
@@ -95,6 +99,36 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
 fn profile_text(all_results: &[SavedTestResult], recent_results: &[SavedTestResult]) -> String {
     profile_lines(all_results, recent_results).join("\n")
+}
+
+fn visible_profile_text(
+    all_results: &[SavedTestResult],
+    recent_results: &[SavedTestResult],
+    scroll_offset: usize,
+    viewport_height: usize,
+) -> String {
+    let lines = profile_lines(all_results, recent_results);
+    visible_lines(&lines, scroll_offset, viewport_height).join("\n")
+}
+
+fn visible_lines(lines: &[String], scroll_offset: usize, viewport_height: usize) -> Vec<String> {
+    if viewport_height == 0 {
+        return Vec::new();
+    }
+
+    let max_offset = max_scroll_offset(lines.len(), viewport_height);
+    let start = scroll_offset.min(max_offset);
+
+    lines
+        .iter()
+        .skip(start)
+        .take(viewport_height)
+        .cloned()
+        .collect()
+}
+
+fn max_scroll_offset(total_lines: usize, viewport_height: usize) -> usize {
+    total_lines.saturating_sub(viewport_height)
 }
 
 fn profile_lines(
@@ -275,8 +309,8 @@ mod tests {
     use chrono::{Duration, Local};
 
     use super::{
-        compare_personal_best, history_lines, personal_best_for_mode, profile_text, today_results,
-        SummaryStats,
+        compare_personal_best, history_lines, max_scroll_offset, personal_best_for_mode,
+        profile_text, today_results, visible_lines, SummaryStats,
     };
     use crate::storage::models::SavedTestResult;
 
@@ -376,5 +410,31 @@ mod tests {
         assert!(text.contains("25w"));
         assert!(text.contains("80"));
         assert!(text.contains("99%"));
+    }
+
+    #[test]
+    fn visible_lines_slices_by_scroll_offset_and_height() {
+        let lines = vec![
+            "one".to_owned(),
+            "two".to_owned(),
+            "three".to_owned(),
+            "four".to_owned(),
+        ];
+
+        assert_eq!(visible_lines(&lines, 1, 2), vec!["two", "three"]);
+    }
+
+    #[test]
+    fn visible_lines_clamps_scroll_past_bottom() {
+        let lines = vec!["one".to_owned(), "two".to_owned(), "three".to_owned()];
+
+        assert_eq!(visible_lines(&lines, 99, 2), vec!["two", "three"]);
+    }
+
+    #[test]
+    fn max_scroll_offset_is_zero_when_content_fits() {
+        assert_eq!(max_scroll_offset(3, 5), 0);
+        assert_eq!(max_scroll_offset(5, 5), 0);
+        assert_eq!(max_scroll_offset(8, 5), 3);
     }
 }

@@ -70,6 +70,8 @@ fn handle_normal_key(app: &mut App, key: KeyCode) {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Char('s') => app.enter_typing_mode(),
         KeyCode::Char('p') => app.open_history(),
+        KeyCode::Char('j') if app.page == Page::History => app.scroll_stats_down(),
+        KeyCode::Char('k') if app.page == Page::History => app.scroll_stats_up(),
         KeyCode::Char(':') => {
             app.enter_command_mode();
         }
@@ -211,5 +213,48 @@ mod tests {
         assert_eq!(app.page, Page::Result);
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.command_input.is_empty());
+    }
+
+    #[test]
+    fn j_and_k_scroll_only_history_page_in_normal_mode() {
+        let mut app = App::default();
+        app.page = Page::History;
+        app.input_mode = InputMode::Normal;
+
+        handle_key(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.stats_scroll_offset, 1);
+
+        handle_key(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.stats_scroll_offset, 0);
+    }
+
+    #[test]
+    fn j_and_k_do_not_scroll_outside_history_page() {
+        let mut app = App::default();
+        app.page = Page::SpeedTest;
+        app.input_mode = InputMode::Normal;
+
+        handle_key(&mut app, KeyCode::Char('j'));
+        handle_key(&mut app, KeyCode::Char('k'));
+
+        assert_eq!(app.stats_scroll_offset, 0);
+    }
+
+    #[test]
+    fn j_and_k_are_typing_input_in_typing_mode() {
+        let mut app = App::default();
+        app.page = Page::SpeedTest;
+        app.input_mode = InputMode::Typing;
+
+        handle_key(&mut app, KeyCode::Char('j'));
+        handle_key(&mut app, KeyCode::Char('k'));
+
+        assert_eq!(app.stats_scroll_offset, 0);
+        assert_eq!(
+            app.session
+                .as_ref()
+                .map(|session| session.typed_input.as_str()),
+            Some("jk")
+        );
     }
 }
