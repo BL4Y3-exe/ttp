@@ -32,6 +32,7 @@ pub struct App {
     pub config: AppConfig,
     pub database: Option<Database>,
     pub recent_results: Vec<SavedTestResult>,
+    pub all_results: Vec<SavedTestResult>,
     result_saved: bool,
 }
 
@@ -51,6 +52,7 @@ impl Default for App {
             config: AppConfig::default(),
             database: None,
             recent_results: Vec::new(),
+            all_results: Vec::new(),
             result_saved: false,
         }
     }
@@ -97,6 +99,7 @@ impl App {
             config,
             database,
             recent_results: Vec::new(),
+            all_results: Vec::new(),
             result_saved: false,
         }
     }
@@ -218,16 +221,22 @@ impl App {
 
         let Some(database) = self.database.as_ref() else {
             self.recent_results.clear();
+            self.all_results.clear();
             return;
         };
 
-        match database.recent_test_results(15) {
-            Ok(results) => {
-                self.recent_results = results;
+        match (
+            database.recent_test_results(15),
+            database.all_test_results(),
+        ) {
+            (Ok(recent_results), Ok(all_results)) => {
+                self.recent_results = recent_results;
+                self.all_results = all_results;
                 self.command_error = None;
             }
-            Err(error) => {
+            (Err(error), _) | (_, Err(error)) => {
                 self.recent_results.clear();
+                self.all_results.clear();
                 self.command_error = Some(format!("storage error: {error:#}"));
             }
         }
