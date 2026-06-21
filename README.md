@@ -1,50 +1,108 @@
 # ttp
 
-A terminal typing practice app inspired by Monkeytype.
+A terminal-based typing trainer for focused keyboard practice.
 
-Status: early v0.1 development / usable local MVP.
+## About
+
+`ttp` is a small Rust TUI typing practice application inspired by browser-based typing trainers. It is designed for people who spend time in the terminal and want a fast, keyboard-first way to run typing tests and review local results.
 
 ## Features
 
-- Terminal-based speed typing
-- Word modes: 10, 25, 50, 100
-- Time modes: 15s, 30s, 60s, 120s
-- WPM, accuracy, and mistakes
-- Vim-inspired controls
-- Command mode for switching test modes
-- Local SQLite result saving
-- Recent history page
-- Config with last selected mode
-- English-only word list for now
+- Terminal-based typing tests with English text
+- Time modes and word-count modes
+- WPM, accuracy, and mistake tracking
+- Centered, left-aligned typing area with a maximum of three visible lines
+- Line-based text scrolling while typing
+- Timer or word-progress counter above the typing text
+- Block caret rendering that follows wrapped text
+- Local SQLite result storage
+- Profile / Stats page with today's statistics, personal bests, overall statistics, and recent history
+- Line-based Profile / Stats scrolling with `j` and `k`
+- Vim-inspired normal, typing, and command input modes
 
-## Run
+## Modes
 
-```bash
-cargo run
-```
+Time-based tests:
+
+- `15s`
+- `30s`
+- `60s`
+- `120s`
+
+Word-count tests:
+
+- `10` words
+- `25` words
+- `50` words
+- `100` words
+
+Time modes show the remaining time. Word-count modes show completed words, such as `3/25`.
 
 ## Controls
 
 Normal mode:
 
-- `s` start typing with the current test
-- `p` open recent history
+- `s` start typing with the current mode
+- `p` open the Profile / Stats page
 - `q` quit
-- `:` enter command mode
-- `Esc` return to normal mode
+- `:` enter command mode to change the test mode
+- `Esc` stay in normal mode and clear an on-screen error
+
+Profile / Stats page, normal mode:
+
+- `j` scroll down one line
+- `k` scroll up one line
 
 Typing mode:
 
-- text keys type characters
-- `Backspace` deletes previous input
-- `Esc` aborts the attempt without saving
+- Character keys enter typing input
+- `Backspace` deletes the previous typed character
+- `Esc` aborts the current attempt without saving it
 
 Command mode:
 
-- `:10`, `:25`, `:50`, `:100`
-- `:15s`, `:30s`, `:60s`, `:120s`
+- `Enter` apply the command
+- `Backspace` delete a command character
+- `Esc` cancel command mode
+
+Supported mode commands:
+
+```text
+:10  :25  :50  :100
+:15s :30s :60s :120s
+```
+
+## Profile / Stats
+
+Press `p` to open the Profile / Stats page. It includes:
+
+- Today's tests completed, highest WPM, and average WPM
+- Personal bests for each supported time and word-count mode
+- Overall test count, WPM, and accuracy statistics
+- The 15 most recent completed tests, newest first
+
+## Installation / Build
+
+Requirements:
+
+- Rust toolchain with Cargo
+- A terminal emulator with ANSI color support
+
+Build the project:
+
+```bash
+cargo build
+```
+
+Run the application:
+
+```bash
+cargo run
+```
 
 ## Storage
+
+`ttp` stores the last selected mode in a small TOML config file and completed test results in SQLite.
 
 Preferred paths:
 
@@ -53,6 +111,16 @@ Preferred paths:
 
 If those paths are unavailable, `ttp` falls back to local files under `./.ttp/`.
 
-## Roadmap
+## Project Status
 
-Possible v0.2+ ideas include themes, personal bests, better stats, cursor trail, and practice mode later.
+The project is currently around v0.2.2 and remains in active development.
+
+Future versions may add broader config-file support, themes, UI customization, caret options, an activity grid, and speed or accuracy graphs. These features are not implemented yet.
+
+## Screenshots
+
+Screenshots will be added later.
+
+## Development Notes
+
+`ttp` is a learning and personal project focused on building a clean, reliable terminal typing trainer.
