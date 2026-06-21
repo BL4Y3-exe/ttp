@@ -34,6 +34,7 @@ pub struct App {
     pub recent_results: Vec<SavedTestResult>,
     pub all_results: Vec<SavedTestResult>,
     pub stats_scroll_offset: usize,
+    stats_max_scroll: usize,
     result_saved: bool,
 }
 
@@ -55,6 +56,7 @@ impl Default for App {
             recent_results: Vec::new(),
             all_results: Vec::new(),
             stats_scroll_offset: 0,
+            stats_max_scroll: 0,
             result_saved: false,
         }
     }
@@ -103,6 +105,7 @@ impl App {
             recent_results: Vec::new(),
             all_results: Vec::new(),
             stats_scroll_offset: 0,
+            stats_max_scroll: 0,
             result_saved: false,
         }
     }
@@ -222,6 +225,7 @@ impl App {
         self.input_mode = InputMode::Normal;
         self.page = Page::History;
         self.stats_scroll_offset = 0;
+        self.stats_max_scroll = 0;
 
         let Some(database) = self.database.as_ref() else {
             self.recent_results.clear();
@@ -248,7 +252,10 @@ impl App {
 
     pub fn scroll_stats_down(&mut self) {
         if self.page == Page::History {
-            self.stats_scroll_offset = self.stats_scroll_offset.saturating_add(1);
+            self.stats_scroll_offset = self
+                .stats_scroll_offset
+                .saturating_add(1)
+                .min(self.stats_max_scroll);
         }
     }
 
@@ -256,6 +263,11 @@ impl App {
         if self.page == Page::History {
             self.stats_scroll_offset = self.stats_scroll_offset.saturating_sub(1);
         }
+    }
+
+    pub fn set_stats_scroll_max(&mut self, max_scroll: usize) {
+        self.stats_max_scroll = max_scroll;
+        self.stats_scroll_offset = self.stats_scroll_offset.min(max_scroll);
     }
 }
 

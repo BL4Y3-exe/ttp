@@ -43,6 +43,7 @@ fn restore_terminal(terminal: &mut Tui) -> Result<()> {
 fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     while !app.should_quit {
         update_active_session(app);
+        update_stats_scroll_bounds(app, terminal.size()?.height);
         terminal.draw(|frame| crate::ui::render(frame, app))?;
 
         if event::poll(Duration::from_millis(100))? {
@@ -55,6 +56,13 @@ fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn update_stats_scroll_bounds(app: &mut App, terminal_height: u16) {
+    if app.page == Page::History {
+        let max_scroll = crate::ui::history::scroll_max_for_height(app, terminal_height);
+        app.set_stats_scroll_max(max_scroll);
+    }
 }
 
 fn handle_key(app: &mut App, key: KeyCode) {
@@ -136,7 +144,7 @@ fn update_active_session(app: &mut App) {
 mod tests {
     use crossterm::event::KeyCode;
 
-    use super::handle_key;
+    use super::{handle_key, update_stats_scroll_bounds};
     use crate::app::{App, InputMode, Page};
 
     #[test]
@@ -220,11 +228,45 @@ mod tests {
         let mut app = App::default();
         app.page = Page::History;
         app.input_mode = InputMode::Normal;
+        app.set_stats_scroll_max(1);
 
         handle_key(&mut app, KeyCode::Char('j'));
         assert_eq!(app.stats_scroll_offset, 1);
 
         handle_key(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.stats_scroll_offset, 0);
+    }
+
+    #[test]
+    fn repeated_j_stays_at_stats_scroll_maximum() {
+        let mut app = App::default();
+        app.page = Page::History;
+        app.input_mode = InputMode::Normal;
+        app.set_stats_scroll_max(2);
+
+        for _ in 0..10 {
+            handle_key(&mut app, KeyCode::Char('j'));
+        }
+
+        assert_eq!(app.stats_scroll_offset, 2);
+
+        handle_key(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.stats_scroll_offset, 1);
+    }
+
+    #[test]
+    fn resize_clamps_stats_scroll_offset_to_new_maximum() {
+        let mut app = App::default();
+        app.page = Page::History;
+        app.set_stats_scroll_max(5);
+
+        for _ in 0..5 {
+            handle_key(&mut app, KeyCode::Char('j'));
+        }
+        assert_eq!(app.stats_scroll_offset, 5);
+
+        update_stats_scroll_bounds(&mut app, 100);
+
         assert_eq!(app.stats_scroll_offset, 0);
     }
 

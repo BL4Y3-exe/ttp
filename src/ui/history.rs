@@ -1,5 +1,5 @@
 use chrono::Local;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -55,14 +55,7 @@ impl SummaryStats {
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(5),
-            Constraint::Length(3),
-        ])
-        .split(frame.area());
+    let chunks = profile_chunks(frame.area());
 
     let palette = theme::default::palette();
 
@@ -95,6 +88,26 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             .alignment(Alignment::Center),
         chunks[2],
     );
+}
+
+pub fn scroll_max_for_height(app: &App, terminal_height: u16) -> usize {
+    let viewport_height =
+        usize::from(profile_chunks(Rect::new(0, 0, 0, terminal_height))[1].height);
+    max_scroll_offset(
+        profile_lines(&app.all_results, &app.recent_results).len(),
+        viewport_height,
+    )
+}
+
+fn profile_chunks(area: Rect) -> std::rc::Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Min(5),
+            Constraint::Length(3),
+        ])
+        .split(area)
 }
 
 fn profile_text(all_results: &[SavedTestResult], recent_results: &[SavedTestResult]) -> String {
