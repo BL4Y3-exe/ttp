@@ -1,7 +1,7 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -21,6 +21,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let block = Block::default()
         .title(" Result ")
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(palette.muted));
     let inner = block.inner(card);
     frame.render_widget(block, card);

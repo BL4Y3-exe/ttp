@@ -1,7 +1,7 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, InputMode, Page};
@@ -18,7 +18,7 @@ pub fn layout(area: Rect) -> ScreenLayout {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(0),
             Constraint::Length(3),
             Constraint::Length(1),
             Constraint::Min(1),
@@ -60,6 +60,7 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let palette = theme::default::palette();
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(palette.muted));
     let inner = block.inner(area);
     frame.render_widget(block, area);

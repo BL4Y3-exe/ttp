@@ -1,6 +1,6 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, InputMode};
@@ -72,6 +72,7 @@ fn render_mode_panel(frame: &mut Frame<'_>, area: Option<Rect>, app: &App) {
     let palette = theme::default::palette();
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(palette.muted));
     let inner = block.inner(panel);
 

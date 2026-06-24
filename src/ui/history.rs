@@ -1,7 +1,7 @@
 use chrono::Local;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -55,64 +55,75 @@ impl SummaryStats {
 }
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let dashboard = dashboard_layout(area);
+    let dashboard = dashboard_layout(area, app.recent_results.len());
     let palette = theme::default::palette();
     let today_stats = SummaryStats::from_results(&today_results(&app.all_results));
     let overall_stats = SummaryStats::from_results(&app.all_results);
 
-    render_stats_panel(
-        frame,
-        dashboard.today,
-        " Today's Statistics ",
-        &[
-            ("tests completed", today_stats.tests_completed.to_string()),
-            (
-                "highest WPM",
-                format_optional_number(today_stats.highest_wpm),
-            ),
-            (
-                "average WPM",
-                format_optional_number(today_stats.average_wpm),
-            ),
-        ],
-    );
+    if let Some(today) = visible_rect(dashboard.today, area, app.stats_scroll_offset) {
+        render_stats_panel(
+            frame,
+            today,
+            " Today's Statistics ",
+            &[
+                ("tests completed", today_stats.tests_completed.to_string()),
+                (
+                    "highest WPM",
+                    format_optional_number(today_stats.highest_wpm),
+                ),
+                (
+                    "average WPM",
+                    format_optional_number(today_stats.average_wpm),
+                ),
+            ],
+        );
+    }
 
-    render_personal_bests(frame, dashboard.personal_bests, app, palette);
+    if let Some(personal_bests) =
+        visible_rect(dashboard.personal_bests, area, app.stats_scroll_offset)
+    {
+        render_personal_bests(frame, personal_bests, app, palette);
+    }
 
-    render_stats_panel(
-        frame,
-        dashboard.overall,
-        " Overall Statistics ",
-        &[
-            ("tests completed", overall_stats.tests_completed.to_string()),
-            (
-                "highest WPM",
-                format_optional_number(overall_stats.highest_wpm),
-            ),
-            (
-                "average WPM",
-                format_optional_number(overall_stats.average_wpm),
-            ),
-            (
-                "highest accuracy",
-                format_optional_percent(overall_stats.highest_accuracy),
-            ),
-            (
-                "average accuracy",
-                format_optional_percent(overall_stats.average_accuracy),
-            ),
-        ],
-    );
+    if let Some(overall) = visible_rect(dashboard.overall, area, app.stats_scroll_offset) {
+        render_stats_panel(
+            frame,
+            overall,
+            " Overall Statistics ",
+            &[
+                ("tests completed", overall_stats.tests_completed.to_string()),
+                (
+                    "highest WPM",
+                    format_optional_number(overall_stats.highest_wpm),
+                ),
+                (
+                    "average WPM",
+                    format_optional_number(overall_stats.average_wpm),
+                ),
+                (
+                    "highest accuracy",
+                    format_optional_percent(overall_stats.highest_accuracy),
+                ),
+                (
+                    "average accuracy",
+                    format_optional_percent(overall_stats.average_accuracy),
+                ),
+            ],
+        );
+    }
 
-    render_history_table(frame, dashboard.history, app, palette);
+    if let Some(history) = visible_rect(dashboard.history, area, app.stats_scroll_offset) {
+        let history_scroll = app
+            .stats_scroll_offset
+            .saturating_sub(usize::from(dashboard.history.y.saturating_sub(area.y)) + 3);
+        render_history_table(frame, history, app, palette, history_scroll);
+    }
 }
 
 pub fn scroll_max_for_area(app: &App, terminal_area: Rect) -> usize {
     let main = crate::ui::components::shell::layout(terminal_area).main;
-    let history = dashboard_layout(main).history;
-    let visible_rows = visible_history_rows(Block::default().borders(Borders::ALL).inner(history));
-
-    visible_rows.map_or(0, |rows| app.recent_results.len().saturating_sub(rows))
+    let dashboard = dashboard_layout(main, app.recent_results.len());
+    usize::from(dashboard.content_height).saturating_sub(usize::from(main.height))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -121,43 +132,65 @@ struct DashboardLayout {
     personal_bests: Rect,
     overall: Rect,
     history: Rect,
+    content_height: u16,
 }
 
-fn dashboard_layout(area: Rect) -> DashboardLayout {
-    let compact = area.height < 30;
-    let stack_best_groups = area.width < 76;
-    let personal_bests_height = if stack_best_groups {
-        if compact {
-            7
-        } else {
-            17
-        }
-    } else if compact {
-        7
+fn dashboard_layout(area: Rect, history_rows: usize) -> DashboardLayout {
+    const TODAY_HEIGHT: u16 = 6;
+    const PERSONAL_BESTS_HEIGHT: u16 = 12;
+    const STACKED_PERSONAL_BESTS_HEIGHT: u16 = 21;
+    const OVERALL_HEIGHT: u16 = 6;
+    const SECTION_GAP: u16 = 1;
+    const MIN_HISTORY_HEIGHT: u16 = 8;
+
+    let personal_bests_height = if area.width < 76 {
+        STACKED_PERSONAL_BESTS_HEIGHT
     } else {
-        10
+        PERSONAL_BESTS_HEIGHT
     };
-    let stats_height = if compact { 5 } else { 6 };
-    let spacing = if compact { 0 } else { 1 };
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(stats_height),
-            Constraint::Length(spacing),
-            Constraint::Length(personal_bests_height),
-            Constraint::Length(spacing),
-            Constraint::Length(stats_height),
-            Constraint::Length(spacing),
-            Constraint::Min(5),
-        ])
-        .split(area);
+    let history_height = u16::try_from(history_rows.saturating_add(3))
+        .unwrap_or(u16::MAX)
+        .max(MIN_HISTORY_HEIGHT);
+    let mut y = area.y;
+    let today = left_aligned_panel(area, y, TODAY_HEIGHT, 58);
+    y = y.saturating_add(TODAY_HEIGHT + SECTION_GAP);
+    let personal_bests = Rect::new(area.x, y, area.width, personal_bests_height);
+    y = y.saturating_add(personal_bests_height + SECTION_GAP);
+    let overall = left_aligned_panel(area, y, OVERALL_HEIGHT, 94);
+    y = y.saturating_add(OVERALL_HEIGHT + SECTION_GAP);
+    let history = Rect::new(area.x, y, area.width, history_height);
+    let content_height = y.saturating_add(history_height).saturating_sub(area.y);
 
     DashboardLayout {
-        today: chunks[0],
-        personal_bests: chunks[2],
-        overall: chunks[4],
-        history: chunks[6],
+        today,
+        personal_bests,
+        overall,
+        history,
+        content_height,
     }
+}
+
+fn left_aligned_panel(area: Rect, y: u16, height: u16, preferred_width: u16) -> Rect {
+    Rect::new(area.x, y, area.width.min(preferred_width), height)
+}
+
+fn visible_rect(rect: Rect, viewport: Rect, scroll_offset: usize) -> Option<Rect> {
+    let screen_y = i32::from(rect.y) - i32::try_from(scroll_offset).unwrap_or(i32::MAX);
+    let viewport_top = i32::from(viewport.y);
+    let viewport_bottom = i32::from(viewport.bottom());
+    let top = screen_y.max(viewport_top);
+    let bottom = (screen_y + i32::from(rect.height)).min(viewport_bottom);
+
+    if bottom <= top || rect.width == 0 || viewport.width == 0 {
+        return None;
+    }
+
+    Some(Rect::new(
+        rect.x.max(viewport.x),
+        u16::try_from(top).unwrap_or(viewport.y),
+        rect.width.min(viewport.width),
+        u16::try_from(bottom - top).unwrap_or(0),
+    ))
 }
 
 fn render_stats_panel(frame: &mut Frame<'_>, area: Rect, title: &str, stats: &[(&str, String)]) {
@@ -264,12 +297,12 @@ fn render_best_group(
 
     for (mode, column) in modes.iter().zip(columns.iter()) {
         let label = if mode_type == "time" {
-            format!("{mode}s")
+            format!("{mode} seconds")
         } else {
-            format!("{mode}w")
+            format!("{mode} words")
         };
         let (wpm, accuracy, date) = personal_best_for_mode(results, mode_type, *mode).map_or_else(
-            || ("-".to_owned(), "-".to_owned(), "-".to_owned()),
+            || ("--".to_owned(), "--".to_owned(), "--".to_owned()),
             |result| {
                 (
                     format!("{:.0} WPM", result.wpm),
@@ -297,6 +330,7 @@ fn render_history_table(
     area: Rect,
     app: &App,
     palette: theme::default::Palette,
+    row_offset: usize,
 ) {
     let block = panel_block(" History ", palette);
     let inner = block.inner(area);
@@ -318,7 +352,7 @@ fn render_history_table(
     let rows = app
         .recent_results
         .iter()
-        .skip(app.stats_scroll_offset)
+        .skip(row_offset)
         .take(visible_rows)
         .map(|result| {
             Row::new(vec![
@@ -337,11 +371,11 @@ fn render_history_table(
     let table = Table::new(
         rows,
         [
-            Constraint::Length(9),
-            Constraint::Length(7),
-            Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Min(16),
+            Constraint::Percentage(18),
+            Constraint::Percentage(14),
+            Constraint::Percentage(18),
+            Constraint::Percentage(18),
+            Constraint::Percentage(32),
         ],
     )
     .header(header)
@@ -362,6 +396,7 @@ fn panel_block<'a>(title: &'a str, palette: theme::default::Palette) -> Block<'a
     Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(palette.muted))
 }
 
@@ -407,9 +442,10 @@ mod tests {
     use ratatui::layout::Rect;
 
     use super::{
-        compare_personal_best, dashboard_layout, personal_best_for_mode, today_results,
-        SummaryStats,
+        compare_personal_best, dashboard_layout, personal_best_for_mode, scroll_max_for_area,
+        today_results, SummaryStats,
     };
+    use crate::app::App;
     use crate::storage::models::SavedTestResult;
 
     fn saved_result(
@@ -496,11 +532,19 @@ mod tests {
             Rect::new(0, 0, 48, 22),
             Rect::new(0, 0, 100, 30),
         ] {
-            let layout = dashboard_layout(area);
+            let layout = dashboard_layout(area, 15);
 
             assert!(layout.today.bottom() <= layout.personal_bests.y);
             assert!(layout.personal_bests.bottom() <= layout.overall.y);
             assert!(layout.overall.bottom() <= layout.history.y);
         }
+    }
+
+    #[test]
+    fn dashboard_scrolls_even_when_history_is_empty() {
+        let mut app = App::default();
+        app.open_history();
+
+        assert!(scroll_max_for_area(&app, Rect::new(0, 0, 100, 24)) > 0);
     }
 }
