@@ -43,7 +43,11 @@ fn restore_terminal(terminal: &mut Tui) -> Result<()> {
 fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     while !app.should_quit {
         update_active_session(app);
-        update_stats_scroll_bounds(app, terminal.size()?.height);
+        let terminal_size = terminal.size()?;
+        update_stats_scroll_bounds(
+            app,
+            ratatui::layout::Rect::new(0, 0, terminal_size.width, terminal_size.height),
+        );
         terminal.draw(|frame| crate::ui::render(frame, app))?;
 
         if event::poll(Duration::from_millis(100))? {
@@ -58,9 +62,9 @@ fn run_app(terminal: &mut Tui, app: &mut App) -> Result<()> {
     Ok(())
 }
 
-fn update_stats_scroll_bounds(app: &mut App, terminal_height: u16) {
+fn update_stats_scroll_bounds(app: &mut App, terminal_area: ratatui::layout::Rect) {
     if app.page == Page::History {
-        let max_scroll = crate::ui::history::scroll_max_for_height(app, terminal_height);
+        let max_scroll = crate::ui::history::scroll_max_for_area(app, terminal_area);
         app.set_stats_scroll_max(max_scroll);
     }
 }
@@ -265,7 +269,7 @@ mod tests {
         }
         assert_eq!(app.stats_scroll_offset, 5);
 
-        update_stats_scroll_bounds(&mut app, 100);
+        update_stats_scroll_bounds(&mut app, ratatui::layout::Rect::new(0, 0, 100, 100));
 
         assert_eq!(app.stats_scroll_offset, 0);
     }

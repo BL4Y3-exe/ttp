@@ -17,7 +17,7 @@ A terminal-based typing trainer for focused keyboard practice.
 - Block caret rendering that follows wrapped text
 - Local SQLite result storage
 - Profile / Stats page with today's statistics, personal bests, overall statistics, and recent history
-- Line-based Profile / Stats scrolling with `j` and `k`
+- Scrollable Profile / Stats history with `j` and `k`
 - Vim-inspired normal, typing, and command input modes
 
 ## Modes
@@ -114,6 +114,8 @@ If those paths are unavailable, `ttp` falls back to local files under `./.ttp/`.
 ## Project Status
 
 The project is currently at v0.2.3 and remains in active development.
+
+v0.2.3 adds a panel-based Ratatui UI polish pass with a persistent header, result card, and responsive profile dashboard.
 
 Future versions may add broader config-file support, themes, UI customization, caret options, an activity grid, and speed or accuracy graphs. These features are not implemented yet.
 

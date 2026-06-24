@@ -64,21 +64,25 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let title = Paragraph::new("ttp")
+        .style(
+            Style::default()
+                .fg(palette.text)
+                .add_modifier(Modifier::BOLD),
+        )
+        .alignment(Alignment::Left);
+
+    if inner.width < 20 {
+        frame.render_widget(title, inner);
+        return;
+    }
+
+    let navigation_width = if inner.width >= 32 { 23 } else { 18 };
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(1), Constraint::Length(23)])
+        .constraints([Constraint::Min(3), Constraint::Length(navigation_width)])
         .split(inner);
-
-    frame.render_widget(
-        Paragraph::new("ttp")
-            .style(
-                Style::default()
-                    .fg(palette.text)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .alignment(Alignment::Left),
-        columns[0],
-    );
+    frame.render_widget(title, columns[0]);
 
     let speed_test_active = app.page != Page::History;
     let active_style = Style::default()
@@ -94,7 +98,7 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 inactive_style
             },
         ),
-        Span::styled("  |  ", Style::default().fg(palette.text)),
+        Span::styled(" | ", Style::default().fg(palette.text)),
         Span::styled(
             "profile",
             if speed_test_active {
@@ -113,9 +117,11 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 pub fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let hint = match (app.page, app.input_mode) {
-        (Page::SpeedTest, InputMode::Normal) => "press s to start typing",
-        (Page::Result, InputMode::Normal) => "press s to start a new test",
-        (Page::History, InputMode::Normal) => "j/k: scroll",
+        (Page::SpeedTest, InputMode::Normal) if area.width >= 24 => "press s to start typing",
+        (Page::SpeedTest, InputMode::Normal) if area.width >= 10 => "s: start",
+        (Page::Result, InputMode::Normal) if area.width >= 24 => "press s to start a new test",
+        (Page::Result, InputMode::Normal) if area.width >= 10 => "s: new test",
+        (Page::History, InputMode::Normal) if area.width >= 10 => "j/k: scroll",
         _ => "",
     };
 
@@ -138,5 +144,27 @@ pub fn centered_rect(area: Rect, desired_width: u16, desired_height: u16) -> Rec
             .saturating_add(area.height.saturating_sub(height) / 2),
         width,
         height,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::layout::Rect;
+
+    use super::layout;
+
+    #[test]
+    fn shell_regions_stay_in_order_for_small_and_large_terminals() {
+        for area in [
+            Rect::new(0, 0, 12, 6),
+            Rect::new(0, 0, 48, 24),
+            Rect::new(0, 0, 160, 60),
+        ] {
+            let screen = layout(area);
+
+            assert!(screen.header.bottom() <= screen.main.y);
+            assert!(screen.main.bottom() <= screen.footer.y);
+            assert!(screen.footer.bottom() <= area.bottom());
+        }
     }
 }

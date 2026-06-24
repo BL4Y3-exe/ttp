@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
         ..card
     };
     let block = Block::default()
-        .title(" result ")
+        .title(" Result ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.muted));
     let inner = block.inner(card);
@@ -34,6 +34,11 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
         );
         return;
     };
+
+    if inner.width < 32 || inner.height < 7 {
+        render_compact_result(frame, inner, result, palette);
+        return;
+    }
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -53,9 +58,9 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .split(rows[0]);
 
     for (area, label, value) in [
-        (metrics[0], "wpm", format!("{:.0}", result.wpm)),
-        (metrics[1], "accuracy", format!("{:.0}%", result.accuracy)),
-        (metrics[2], "mistakes", result.mistakes.to_string()),
+        (metrics[0], "WPM", format!("{:.0}", result.wpm)),
+        (metrics[1], "Accuracy", format!("{:.0}%", result.accuracy)),
+        (metrics[2], "Mistakes", result.mistakes.to_string()),
     ] {
         frame.render_widget(
             Paragraph::new(vec![
@@ -77,10 +82,10 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(rows[2]);
     for (area, label, value) in [
-        (secondary[0], "mode", result.mode.label()),
+        (secondary[0], "Mode", result.mode.label()),
         (
             secondary[1],
-            "time",
+            "Time",
             format!("{:.2}s", result.elapsed_seconds),
         ),
     ] {
@@ -93,4 +98,28 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
             area,
         );
     }
+}
+
+fn render_compact_result(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    result: &crate::core::test_session::TestResult,
+    palette: theme::default::Palette,
+) {
+    let lines = [
+        format!("WPM: {:.0}", result.wpm),
+        format!("Accuracy: {:.0}%", result.accuracy),
+        format!("Mistakes: {}", result.mistakes),
+        format!("{}  {:.2}s", result.mode.label(), result.elapsed_seconds),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines.join("\n"))
+            .style(
+                Style::default()
+                    .fg(palette.text)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .alignment(Alignment::Center),
+        area,
+    );
 }

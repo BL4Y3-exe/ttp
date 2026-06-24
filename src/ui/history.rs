@@ -63,15 +63,15 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     render_stats_panel(
         frame,
         dashboard.today,
-        " Today's statistics ",
+        " Today's Statistics ",
         &[
             ("tests completed", today_stats.tests_completed.to_string()),
             (
-                "highest wpm",
+                "highest WPM",
                 format_optional_number(today_stats.highest_wpm),
             ),
             (
-                "average wpm",
+                "average WPM",
                 format_optional_number(today_stats.average_wpm),
             ),
         ],
@@ -82,15 +82,15 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     render_stats_panel(
         frame,
         dashboard.overall,
-        " Overall statistics ",
+        " Overall Statistics ",
         &[
             ("tests completed", overall_stats.tests_completed.to_string()),
             (
-                "highest wpm",
+                "highest WPM",
                 format_optional_number(overall_stats.highest_wpm),
             ),
             (
-                "average wpm",
+                "average WPM",
                 format_optional_number(overall_stats.average_wpm),
             ),
             (
@@ -107,12 +107,12 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     render_history_table(frame, dashboard.history, app, palette);
 }
 
-pub fn scroll_max_for_height(app: &App, terminal_height: u16) -> usize {
-    let main_height = terminal_height.saturating_sub(6);
-    let history = dashboard_layout(Rect::new(0, 0, 80, main_height)).history;
-    let inner_height = Block::default().borders(Borders::ALL).inner(history).height;
-    let visible_rows = usize::from(inner_height.saturating_sub(1));
-    app.recent_results.len().saturating_sub(visible_rows)
+pub fn scroll_max_for_area(app: &App, terminal_area: Rect) -> usize {
+    let main = crate::ui::components::shell::layout(terminal_area).main;
+    let history = dashboard_layout(main).history;
+    let visible_rows = visible_history_rows(Block::default().borders(Borders::ALL).inner(history));
+
+    visible_rows.map_or(0, |rows| app.recent_results.len().saturating_sub(rows))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -124,15 +124,30 @@ struct DashboardLayout {
 }
 
 fn dashboard_layout(area: Rect) -> DashboardLayout {
+    let compact = area.height < 30;
+    let stack_best_groups = area.width < 76;
+    let personal_bests_height = if stack_best_groups {
+        if compact {
+            7
+        } else {
+            17
+        }
+    } else if compact {
+        7
+    } else {
+        10
+    };
+    let stats_height = if compact { 5 } else { 6 };
+    let spacing = if compact { 0 } else { 1 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),
-            Constraint::Length(1),
-            Constraint::Length(10),
-            Constraint::Length(1),
-            Constraint::Length(6),
-            Constraint::Length(1),
+            Constraint::Length(stats_height),
+            Constraint::Length(spacing),
+            Constraint::Length(personal_bests_height),
+            Constraint::Length(spacing),
+            Constraint::Length(stats_height),
+            Constraint::Length(spacing),
             Constraint::Min(5),
         ])
         .split(area);
@@ -193,18 +208,26 @@ fn render_personal_bests(
     app: &App,
     palette: theme::default::Palette,
 ) {
-    let outer = panel_block(" Personal bests ", palette);
+    let outer = panel_block(" Personal Bests ", palette);
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(inner);
+    let stack_groups = inner.width < 72;
+    let groups = if stack_groups {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(inner)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(inner)
+    };
 
     render_best_group(
         frame,
-        columns[0],
-        " Time modes ",
+        groups[0],
+        " Time Modes ",
         "time",
         TIME_MODES,
         &app.all_results,
@@ -212,8 +235,8 @@ fn render_personal_bests(
     );
     render_best_group(
         frame,
-        columns[1],
-        " Word modes ",
+        groups[1],
+        " Word Modes ",
         "words",
         WORD_MODES,
         &app.all_results,
@@ -249,7 +272,7 @@ fn render_best_group(
             || ("-".to_owned(), "-".to_owned(), "-".to_owned()),
             |result| {
                 (
-                    format!("{:.0} wpm", result.wpm),
+                    format!("{:.0} WPM", result.wpm),
                     format!("{:.0}%", result.accuracy),
                     result.created_at.format("%d %b %Y").to_string(),
                 )
@@ -289,7 +312,9 @@ fn render_history_table(
         return;
     }
 
-    let visible_rows = usize::from(inner.height.saturating_sub(1));
+    let Some(visible_rows) = visible_history_rows(inner) else {
+        return;
+    };
     let rows = app
         .recent_results
         .iter()
@@ -304,7 +329,7 @@ fn render_history_table(
                 Cell::from(result.created_at.format("%Y-%m-%d %H:%M").to_string()),
             ])
         });
-    let header = Row::new(["mode", "wpm", "accuracy", "mistakes", "date"]).style(
+    let header = Row::new(["Mode", "WPM", "Accuracy", "Mistakes", "Date"]).style(
         Style::default()
             .fg(palette.accent)
             .add_modifier(Modifier::BOLD),
@@ -323,6 +348,14 @@ fn render_history_table(
     .column_spacing(1)
     .style(Style::default().fg(palette.text));
     frame.render_widget(table, inner);
+}
+
+fn visible_history_rows(inner: Rect) -> Option<usize> {
+    if inner.width == 0 || inner.height < 2 {
+        return None;
+    }
+
+    Some(usize::from(inner.height - 1))
 }
 
 fn panel_block<'a>(title: &'a str, palette: theme::default::Palette) -> Block<'a> {
@@ -371,8 +404,12 @@ fn format_optional_percent(value: Option<f64>) -> String {
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, Local};
+    use ratatui::layout::Rect;
 
-    use super::{compare_personal_best, personal_best_for_mode, today_results, SummaryStats};
+    use super::{
+        compare_personal_best, dashboard_layout, personal_best_for_mode, today_results,
+        SummaryStats,
+    };
     use crate::storage::models::SavedTestResult;
 
     fn saved_result(
@@ -450,5 +487,20 @@ mod tests {
 
         assert_eq!(best.wpm, 90.0);
         assert_eq!(best.mode_type, "time");
+    }
+
+    #[test]
+    fn dashboard_panels_remain_ordered_at_compact_sizes() {
+        for area in [
+            Rect::new(0, 0, 48, 18),
+            Rect::new(0, 0, 48, 22),
+            Rect::new(0, 0, 100, 30),
+        ] {
+            let layout = dashboard_layout(area);
+
+            assert!(layout.today.bottom() <= layout.personal_bests.y);
+            assert!(layout.personal_bests.bottom() <= layout.overall.y);
+            assert!(layout.overall.bottom() <= layout.history.y);
+        }
     }
 }

@@ -1,4 +1,4 @@
-use ratatui::layout::{Alignment, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
@@ -17,9 +17,10 @@ struct TypingScreenLayout {
 
 pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let palette = theme::default::palette();
-    render_mode_panel(frame, area, app);
+    let (metadata_area, typing_region) = speed_test_layout(area);
+    render_mode_panel(frame, metadata_area, app);
 
-    let typing_layout = typing_screen_layout(area);
+    let typing_layout = typing_screen_layout(typing_region);
 
     if let Some(session) = app.session.as_ref() {
         if app.input_mode == InputMode::Typing {
@@ -45,21 +46,29 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     }
 }
 
-fn render_mode_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    if area.width < 24 || area.height < 4 {
+fn speed_test_layout(area: Rect) -> (Option<Rect>, Rect) {
+    if area.height < 8 {
+        return (None, area);
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(4), Constraint::Min(3)])
+        .split(area);
+
+    (Some(chunks[0]), chunks[1])
+}
+
+fn render_mode_panel(frame: &mut Frame<'_>, area: Option<Rect>, app: &App) {
+    let Some(area) = area else {
+        return;
+    };
+
+    if area.width < 24 || area.height < 3 {
         return;
     }
 
-    let panel = centered_rect(
-        Rect {
-            x: area.x,
-            y: area.y.saturating_add(1),
-            width: area.width,
-            height: 3,
-        },
-        38,
-        3,
-    );
+    let panel = centered_rect(area, 38, 3);
     let palette = theme::default::palette();
     let block = Block::default()
         .borders(Borders::ALL)
