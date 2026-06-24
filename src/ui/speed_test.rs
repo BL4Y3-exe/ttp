@@ -1,11 +1,12 @@
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, InputMode};
 use crate::core::test_session::TestMode;
 use crate::theme;
+use crate::ui::components::shell::centered_rect;
 use crate::ui::components::typing_area;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,30 +15,9 @@ struct TypingScreenLayout {
     status_area: Option<Rect>,
 }
 
-pub fn render(frame: &mut Frame<'_>, app: &App) {
-    let area = frame.area();
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(5),
-            Constraint::Length(3),
-        ])
-        .split(area);
-
+pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let palette = theme::default::palette();
-
-    let header = Paragraph::new(format!(
-        "ttp\nmode: {}    language: english",
-        app.current_mode.label()
-    ))
-    .style(
-        Style::default()
-            .fg(palette.accent)
-            .add_modifier(Modifier::BOLD),
-    )
-    .alignment(Alignment::Center);
-    frame.render_widget(header, chunks[0]);
+    render_mode_panel(frame, area, app);
 
     let typing_layout = typing_screen_layout(area);
 
@@ -63,17 +43,43 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             .alignment(Alignment::Left);
         frame.render_widget(empty, typing_layout.text_area);
     }
+}
 
-    let footer_text = if app.input_mode == InputMode::Normal {
-        "press s to start typing".to_owned()
-    } else {
-        String::new()
-    };
+fn render_mode_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    if area.width < 24 || area.height < 4 {
+        return;
+    }
 
-    let footer = Paragraph::new(footer_text)
-        .style(Style::default().fg(palette.muted))
-        .alignment(Alignment::Center);
-    frame.render_widget(footer, chunks[2]);
+    let panel = centered_rect(
+        Rect {
+            x: area.x,
+            y: area.y.saturating_add(1),
+            width: area.width,
+            height: 3,
+        },
+        38,
+        3,
+    );
+    let palette = theme::default::palette();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.muted));
+    let inner = block.inner(panel);
+
+    frame.render_widget(block, panel);
+    frame.render_widget(
+        Paragraph::new(format!(
+            "mode: {}  |  language: english",
+            app.current_mode.label()
+        ))
+        .style(
+            Style::default()
+                .fg(palette.text)
+                .add_modifier(Modifier::BOLD),
+        )
+        .alignment(Alignment::Center),
+        inner,
+    );
 }
 
 fn typing_screen_layout(area: Rect) -> TypingScreenLayout {

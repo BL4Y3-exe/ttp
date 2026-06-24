@@ -113,7 +113,7 @@ If those paths are unavailable, `ttp` falls back to local files under `./.ttp/`.
 
 ## Project Status
 
-The project is currently around v0.2.2 and remains in active development.
+The project is currently at v0.2.3 and remains in active development.
 
 Future versions may add broader config-file support, themes, UI customization, caret options, an activity grid, and speed or accuracy graphs. These features are not implemented yet.
 

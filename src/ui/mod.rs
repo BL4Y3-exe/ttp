@@ -6,13 +6,19 @@ pub mod speed_test;
 use ratatui::Frame;
 
 use crate::app::{App, InputMode, Page};
+use crate::ui::components::shell;
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
+    let layout = shell::layout(frame.area());
+    shell::render_header(frame, layout.header, app);
+
     match app.page {
-        Page::SpeedTest => speed_test::render(frame, app),
-        Page::Result => result::render(frame, app),
-        Page::History => history::render(frame, app),
+        Page::SpeedTest => speed_test::render(frame, layout.main, app),
+        Page::Result => result::render(frame, layout.main, app),
+        Page::History => history::render(frame, layout.main, app),
     }
+
+    shell::render_footer(frame, layout.footer, app);
 
     if app.input_mode == InputMode::Command {
         components::top_panel::render_command_line(frame, &app.command_input);

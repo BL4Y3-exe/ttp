@@ -1,7 +1,7 @@
 use chrono::Local;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -54,179 +54,282 @@ impl SummaryStats {
     }
 }
 
-pub fn render(frame: &mut Frame<'_>, app: &App) {
-    let chunks = profile_chunks(frame.area());
-
+pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let dashboard = dashboard_layout(area);
     let palette = theme::default::palette();
+    let today_stats = SummaryStats::from_results(&today_results(&app.all_results));
+    let overall_stats = SummaryStats::from_results(&app.all_results);
 
-    frame.render_widget(
-        Paragraph::new("ttp\nprofile")
-            .style(
-                Style::default()
-                    .fg(palette.accent)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .alignment(Alignment::Center),
-        chunks[0],
+    render_stats_panel(
+        frame,
+        dashboard.today,
+        " Today's statistics ",
+        &[
+            ("tests completed", today_stats.tests_completed.to_string()),
+            (
+                "highest wpm",
+                format_optional_number(today_stats.highest_wpm),
+            ),
+            (
+                "average wpm",
+                format_optional_number(today_stats.average_wpm),
+            ),
+        ],
     );
 
-    frame.render_widget(
-        Paragraph::new(visible_profile_text(
-            &app.all_results,
-            &app.recent_results,
-            app.stats_scroll_offset,
-            usize::from(chunks[1].height),
-        ))
-        .style(Style::default().fg(palette.text))
-        .alignment(Alignment::Left),
-        chunks[1],
+    render_personal_bests(frame, dashboard.personal_bests, app, palette);
+
+    render_stats_panel(
+        frame,
+        dashboard.overall,
+        " Overall statistics ",
+        &[
+            ("tests completed", overall_stats.tests_completed.to_string()),
+            (
+                "highest wpm",
+                format_optional_number(overall_stats.highest_wpm),
+            ),
+            (
+                "average wpm",
+                format_optional_number(overall_stats.average_wpm),
+            ),
+            (
+                "highest accuracy",
+                format_optional_percent(overall_stats.highest_accuracy),
+            ),
+            (
+                "average accuracy",
+                format_optional_percent(overall_stats.average_accuracy),
+            ),
+        ],
     );
 
-    frame.render_widget(
-        Paragraph::new(format!("mode: {}    j/k: scroll", app.input_mode_label()))
-            .style(Style::default().fg(palette.muted))
-            .alignment(Alignment::Center),
-        chunks[2],
-    );
+    render_history_table(frame, dashboard.history, app, palette);
 }
 
 pub fn scroll_max_for_height(app: &App, terminal_height: u16) -> usize {
-    let viewport_height =
-        usize::from(profile_chunks(Rect::new(0, 0, 0, terminal_height))[1].height);
-    max_scroll_offset(
-        profile_lines(&app.all_results, &app.recent_results).len(),
-        viewport_height,
-    )
-}
-
-fn profile_chunks(area: Rect) -> std::rc::Rc<[Rect]> {
-    Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(5),
-            Constraint::Length(3),
-        ])
-        .split(area)
-}
-
-fn profile_text(all_results: &[SavedTestResult], recent_results: &[SavedTestResult]) -> String {
-    profile_lines(all_results, recent_results).join("\n")
-}
-
-fn visible_profile_text(
-    all_results: &[SavedTestResult],
-    recent_results: &[SavedTestResult],
-    scroll_offset: usize,
-    viewport_height: usize,
-) -> String {
-    let lines = profile_lines(all_results, recent_results);
-    visible_lines(&lines, scroll_offset, viewport_height).join("\n")
-}
-
-fn visible_lines(lines: &[String], scroll_offset: usize, viewport_height: usize) -> Vec<String> {
-    if viewport_height == 0 {
-        return Vec::new();
-    }
-
-    let max_offset = max_scroll_offset(lines.len(), viewport_height);
-    let start = scroll_offset.min(max_offset);
-
-    lines
-        .iter()
-        .skip(start)
-        .take(viewport_height)
-        .cloned()
-        .collect()
-}
-
-fn max_scroll_offset(total_lines: usize, viewport_height: usize) -> usize {
-    total_lines.saturating_sub(viewport_height)
-}
-
-fn profile_lines(
-    all_results: &[SavedTestResult],
-    recent_results: &[SavedTestResult],
-) -> Vec<String> {
-    let today_results = today_results(all_results);
-    let today_stats = SummaryStats::from_results(&today_results);
-    let overall_stats = SummaryStats::from_results(all_results);
-    let mut lines = Vec::new();
-
-    lines.push("Today's statistics".to_owned());
-    lines.extend(summary_lines(
-        &today_stats,
-        &[
-            SummaryField::TestsCompleted,
-            SummaryField::HighestWpm,
-            SummaryField::AverageWpm,
-        ],
-    ));
-    lines.push(String::new());
-
-    lines.push("Personal bests".to_owned());
-    lines.push("Time modes".to_owned());
-    lines.extend(personal_best_lines(all_results, "time", TIME_MODES));
-    lines.push(String::new());
-    lines.push("Word count modes".to_owned());
-    lines.extend(personal_best_lines(all_results, "words", WORD_MODES));
-    lines.push(String::new());
-
-    lines.push("Overall statistics".to_owned());
-    lines.extend(summary_lines(
-        &overall_stats,
-        &[
-            SummaryField::TestsCompleted,
-            SummaryField::HighestWpm,
-            SummaryField::AverageWpm,
-            SummaryField::HighestAccuracy,
-            SummaryField::AverageAccuracy,
-        ],
-    ));
-    lines.push(String::new());
-
-    lines.push("History".to_owned());
-    lines.extend(history_lines(recent_results));
-
-    lines
+    let main_height = terminal_height.saturating_sub(6);
+    let history = dashboard_layout(Rect::new(0, 0, 80, main_height)).history;
+    let inner_height = Block::default().borders(Borders::ALL).inner(history).height;
+    let visible_rows = usize::from(inner_height.saturating_sub(1));
+    app.recent_results.len().saturating_sub(visible_rows)
 }
 
 #[derive(Debug, Clone, Copy)]
-enum SummaryField {
-    TestsCompleted,
-    HighestWpm,
-    AverageWpm,
-    HighestAccuracy,
-    AverageAccuracy,
+struct DashboardLayout {
+    today: Rect,
+    personal_bests: Rect,
+    overall: Rect,
+    history: Rect,
 }
 
-fn summary_lines(stats: &SummaryStats, fields: &[SummaryField]) -> Vec<String> {
-    fields
+fn dashboard_layout(area: Rect) -> DashboardLayout {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(6),
+            Constraint::Length(1),
+            Constraint::Length(10),
+            Constraint::Length(1),
+            Constraint::Length(6),
+            Constraint::Length(1),
+            Constraint::Min(5),
+        ])
+        .split(area);
+
+    DashboardLayout {
+        today: chunks[0],
+        personal_bests: chunks[2],
+        overall: chunks[4],
+        history: chunks[6],
+    }
+}
+
+fn render_stats_panel(frame: &mut Frame<'_>, area: Rect, title: &str, stats: &[(&str, String)]) {
+    let palette = theme::default::palette();
+    let block = panel_block(title, palette);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let constraints = vec![Constraint::Ratio(1, stats.len().max(1) as u32); stats.len()];
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(inner);
+
+    for ((label, value), column) in stats.iter().zip(columns.iter()) {
+        let label_area = Rect {
+            y: column.y.saturating_add(1),
+            height: column.height.saturating_sub(1).min(1),
+            ..*column
+        };
+        frame.render_widget(
+            Paragraph::new((*label).to_owned())
+                .style(Style::default().fg(palette.muted))
+                .alignment(Alignment::Center),
+            label_area,
+        );
+        let value_area = Rect {
+            y: column.y.saturating_add(2),
+            height: column.height.saturating_sub(2),
+            ..*column
+        };
+        frame.render_widget(
+            Paragraph::new(value.clone())
+                .style(
+                    Style::default()
+                        .fg(palette.text)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .alignment(Alignment::Center),
+            value_area,
+        );
+    }
+}
+
+fn render_personal_bests(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    app: &App,
+    palette: theme::default::Palette,
+) {
+    let outer = panel_block(" Personal bests ", palette);
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(inner);
+
+    render_best_group(
+        frame,
+        columns[0],
+        " Time modes ",
+        "time",
+        TIME_MODES,
+        &app.all_results,
+        palette,
+    );
+    render_best_group(
+        frame,
+        columns[1],
+        " Word modes ",
+        "words",
+        WORD_MODES,
+        &app.all_results,
+        palette,
+    );
+}
+
+fn render_best_group(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &str,
+    mode_type: &str,
+    modes: &[u16],
+    results: &[SavedTestResult],
+    palette: theme::default::Palette,
+) {
+    let block = panel_block(title, palette);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let constraints = vec![Constraint::Ratio(1, modes.len() as u32); modes.len()];
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(inner);
+
+    for (mode, column) in modes.iter().zip(columns.iter()) {
+        let label = if mode_type == "time" {
+            format!("{mode}s")
+        } else {
+            format!("{mode}w")
+        };
+        let (wpm, accuracy, date) = personal_best_for_mode(results, mode_type, *mode).map_or_else(
+            || ("-".to_owned(), "-".to_owned(), "-".to_owned()),
+            |result| {
+                (
+                    format!("{:.0} wpm", result.wpm),
+                    format!("{:.0}%", result.accuracy),
+                    result.created_at.format("%d %b %Y").to_string(),
+                )
+            },
+        );
+        frame.render_widget(
+            Paragraph::new(vec![
+                ratatui::text::Line::from(label),
+                ratatui::text::Line::from(wpm),
+                ratatui::text::Line::from(accuracy),
+                ratatui::text::Line::from(date),
+            ])
+            .style(Style::default().fg(palette.text))
+            .alignment(Alignment::Center),
+            *column,
+        );
+    }
+}
+
+fn render_history_table(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    app: &App,
+    palette: theme::default::Palette,
+) {
+    let block = panel_block(" History ", palette);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if app.recent_results.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No results yet. Complete a test first.")
+                .style(Style::default().fg(palette.muted))
+                .alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    }
+
+    let visible_rows = usize::from(inner.height.saturating_sub(1));
+    let rows = app
+        .recent_results
         .iter()
-        .map(|field| match field {
-            SummaryField::TestsCompleted => {
-                format!("Tests completed: {}", stats.tests_completed)
-            }
-            SummaryField::HighestWpm => {
-                format!("Highest WPM: {}", format_optional_number(stats.highest_wpm))
-            }
-            SummaryField::AverageWpm => {
-                format!("Average WPM: {}", format_optional_number(stats.average_wpm))
-            }
-            SummaryField::HighestAccuracy => {
-                format!(
-                    "Highest accuracy: {}",
-                    format_optional_percent(stats.highest_accuracy)
-                )
-            }
-            SummaryField::AverageAccuracy => {
-                format!(
-                    "Average accuracy: {}",
-                    format_optional_percent(stats.average_accuracy)
-                )
-            }
-        })
-        .collect()
+        .skip(app.stats_scroll_offset)
+        .take(visible_rows)
+        .map(|result| {
+            Row::new(vec![
+                Cell::from(result.mode_label()),
+                Cell::from(format!("{:.0}", result.wpm)),
+                Cell::from(format!("{:.0}%", result.accuracy)),
+                Cell::from(result.mistakes.to_string()),
+                Cell::from(result.created_at.format("%Y-%m-%d %H:%M").to_string()),
+            ])
+        });
+    let header = Row::new(["mode", "wpm", "accuracy", "mistakes", "date"]).style(
+        Style::default()
+            .fg(palette.accent)
+            .add_modifier(Modifier::BOLD),
+    );
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(9),
+            Constraint::Length(7),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Min(16),
+        ],
+    )
+    .header(header)
+    .column_spacing(1)
+    .style(Style::default().fg(palette.text));
+    frame.render_widget(table, inner);
+}
+
+fn panel_block<'a>(title: &'a str, palette: theme::default::Palette) -> Block<'a> {
+    Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.muted))
 }
 
 fn today_results(results: &[SavedTestResult]) -> Vec<SavedTestResult> {
@@ -236,34 +339,6 @@ fn today_results(results: &[SavedTestResult]) -> Vec<SavedTestResult> {
         .iter()
         .filter(|result| result.created_at.date_naive() == today)
         .cloned()
-        .collect()
-}
-
-fn personal_best_lines(
-    results: &[SavedTestResult],
-    mode_type: &str,
-    mode_values: &[u16],
-) -> Vec<String> {
-    mode_values
-        .iter()
-        .map(|mode_value| {
-            let label = match mode_type {
-                "time" => format!("{mode_value}s"),
-                "words" => format!("{mode_value}w"),
-                _ => format!("{mode_value}{mode_type}"),
-            };
-
-            match personal_best_for_mode(results, mode_type, *mode_value) {
-                Some(result) => format!(
-                    "{:<4} {:>5.0} WPM   {:>3.0}% acc   {}",
-                    label,
-                    result.wpm,
-                    result.accuracy,
-                    result.created_at.format("%Y-%m-%d")
-                ),
-                None => format!("{:<4}     - WPM     - acc   -", label),
-            }
-        })
         .collect()
 }
 
@@ -285,30 +360,6 @@ fn compare_personal_best(left: &SavedTestResult, right: &SavedTestResult) -> std
         .then_with(|| left.created_at.cmp(&right.created_at))
 }
 
-fn history_lines(results: &[SavedTestResult]) -> Vec<String> {
-    if results.is_empty() {
-        return vec!["No results yet. Complete a test first.".to_owned()];
-    }
-
-    let mut lines = vec![format!(
-        "{:<8} {:>6} {:>10} {:>9}   {}",
-        "Mode", "WPM", "Accuracy", "Mistakes", "Date"
-    )];
-
-    for result in results {
-        lines.push(format!(
-            "{:<8} {:>6.0} {:>9.0}% {:>9}   {}",
-            result.mode_label(),
-            result.wpm,
-            result.accuracy,
-            result.mistakes,
-            result.created_at.format("%Y-%m-%d %H:%M")
-        ));
-    }
-
-    lines
-}
-
 fn format_optional_number(value: Option<f64>) -> String {
     value.map_or_else(|| "-".to_owned(), |value| format!("{value:.0}"))
 }
@@ -321,10 +372,7 @@ fn format_optional_percent(value: Option<f64>) -> String {
 mod tests {
     use chrono::{Duration, Local};
 
-    use super::{
-        compare_personal_best, history_lines, max_scroll_offset, personal_best_for_mode,
-        profile_text, today_results, visible_lines, SummaryStats,
-    };
+    use super::{compare_personal_best, personal_best_for_mode, today_results, SummaryStats};
     use crate::storage::models::SavedTestResult;
 
     fn saved_result(
@@ -347,16 +395,6 @@ mod tests {
             elapsed_seconds: 30.0,
             created_at: Local::now() + Duration::days(days_offset),
         }
-    }
-
-    #[test]
-    fn empty_profile_formatting_does_not_panic() {
-        let text = profile_text(&[], &[]);
-
-        assert!(text.contains("Today's statistics"));
-        assert!(text.contains("Tests completed: 0"));
-        assert!(text.contains("Highest WPM: -"));
-        assert!(text.contains("No results yet."));
     }
 
     #[test]
@@ -412,42 +450,5 @@ mod tests {
 
         assert_eq!(best.wpm, 90.0);
         assert_eq!(best.mode_type, "time");
-    }
-
-    #[test]
-    fn history_keeps_existing_recent_format() {
-        let results = vec![saved_result("words", 25, 80.0, 99.0, 0)];
-        let text = history_lines(&results).join("\n");
-
-        assert!(text.contains("Mode"));
-        assert!(text.contains("25w"));
-        assert!(text.contains("80"));
-        assert!(text.contains("99%"));
-    }
-
-    #[test]
-    fn visible_lines_slices_by_scroll_offset_and_height() {
-        let lines = vec![
-            "one".to_owned(),
-            "two".to_owned(),
-            "three".to_owned(),
-            "four".to_owned(),
-        ];
-
-        assert_eq!(visible_lines(&lines, 1, 2), vec!["two", "three"]);
-    }
-
-    #[test]
-    fn visible_lines_clamps_scroll_past_bottom() {
-        let lines = vec!["one".to_owned(), "two".to_owned(), "three".to_owned()];
-
-        assert_eq!(visible_lines(&lines, 99, 2), vec!["two", "three"]);
-    }
-
-    #[test]
-    fn max_scroll_offset_is_zero_when_content_fits() {
-        assert_eq!(max_scroll_offset(3, 5), 0);
-        assert_eq!(max_scroll_offset(5, 5), 0);
-        assert_eq!(max_scroll_offset(8, 5), 3);
     }
 }

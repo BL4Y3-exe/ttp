@@ -1,57 +1,96 @@
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::Paragraph;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::App;
 use crate::theme;
+use crate::ui::components::shell::centered_rect;
 
-pub fn render(frame: &mut Frame<'_>, app: &App) {
-    let chunks = Layout::default()
+pub fn render(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let palette = theme::default::palette();
+    let card_height = if area.height >= 12 { 11 } else { area.height };
+    let card = centered_rect(area, 46, card_height);
+    let card = Rect {
+        y: area
+            .y
+            .saturating_add(area.height.saturating_sub(card.height) / 3),
+        ..card
+    };
+    let block = Block::default()
+        .title(" result ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.muted));
+    let inner = block.inner(card);
+    frame.render_widget(block, card);
+
+    let Some(result) = app.last_result.as_ref() else {
+        frame.render_widget(
+            Paragraph::new("test result will appear here")
+                .style(Style::default().fg(palette.muted))
+                .alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    };
+
+    let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(5),
-            Constraint::Length(3),
+            Constraint::Length(4),
+            Constraint::Length(1),
+            Constraint::Min(2),
         ])
-        .split(frame.area());
+        .split(inner);
+    let metrics = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33),
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+        ])
+        .split(rows[0]);
 
-    let palette = theme::default::palette();
+    for (area, label, value) in [
+        (metrics[0], "wpm", format!("{:.0}", result.wpm)),
+        (metrics[1], "accuracy", format!("{:.0}%", result.accuracy)),
+        (metrics[2], "mistakes", result.mistakes.to_string()),
+    ] {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(Span::styled(label, Style::default().fg(palette.muted))),
+                Line::from(Span::styled(
+                    value,
+                    Style::default()
+                        .fg(palette.text)
+                        .add_modifier(Modifier::BOLD),
+                )),
+            ])
+            .alignment(Alignment::Center),
+            area,
+        );
+    }
 
-    frame.render_widget(
-        Paragraph::new("ttp")
-            .style(
-                Style::default()
-                    .fg(palette.accent)
-                    .add_modifier(Modifier::BOLD),
-            )
+    let secondary = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(rows[2]);
+    for (area, label, value) in [
+        (secondary[0], "mode", result.mode.label()),
+        (
+            secondary[1],
+            "time",
+            format!("{:.2}s", result.elapsed_seconds),
+        ),
+    ] {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(Span::styled(label, Style::default().fg(palette.muted))),
+                Line::from(Span::styled(value, Style::default().fg(palette.text))),
+            ])
             .alignment(Alignment::Center),
-        chunks[0],
-    );
-    let result_text = app.last_result.as_ref().map_or_else(
-        || "result\n\ntest result will appear here".to_owned(),
-        |result| {
-            format!(
-                "result\n\nWPM: {:.0}\nAccuracy: {:.0}%\nMistakes: {}\nMode: {}\nTime: {:.2}s",
-                result.wpm,
-                result.accuracy,
-                result.mistakes,
-                result.mode.label(),
-                result.elapsed_seconds
-            )
-        },
-    );
-
-    frame.render_widget(
-        Paragraph::new(result_text)
-            .style(Style::default().fg(palette.text))
-            .alignment(Alignment::Center),
-        chunks[1],
-    );
-    frame.render_widget(
-        Paragraph::new(format!("mode: {}", app.input_mode_label()))
-            .style(Style::default().fg(palette.muted))
-            .alignment(Alignment::Center),
-        chunks[2],
-    );
+            area,
+        );
+    }
 }

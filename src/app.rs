@@ -74,8 +74,7 @@ impl App {
             }
         };
 
-        let current_mode =
-            TestMode::from_label(&config.last_selected_mode).unwrap_or_else(TestMode::default);
+        let current_mode = TestMode::from_label(&config.last_selected_mode).unwrap_or_default();
 
         let database = match Database::open().and_then(|database| {
             database.init()?;
@@ -107,14 +106,6 @@ impl App {
             stats_scroll_offset: 0,
             stats_max_scroll: 0,
             result_saved: false,
-        }
-    }
-
-    pub fn input_mode_label(&self) -> &'static str {
-        match self.input_mode {
-            InputMode::Normal => "normal",
-            InputMode::Typing => "typing",
-            InputMode::Command => "command",
         }
     }
 
