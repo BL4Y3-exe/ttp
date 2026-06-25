@@ -63,6 +63,7 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(palette.muted));
     let inner = block.inner(area);
+    let content = horizontal_padding(inner, 1);
     frame.render_widget(block, area);
 
     let title = Paragraph::new("ttp")
@@ -73,16 +74,16 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
         )
         .alignment(Alignment::Left);
 
-    if inner.width < 20 {
-        frame.render_widget(title, inner);
+    if content.width < 20 {
+        frame.render_widget(title, content);
         return;
     }
 
-    let navigation_width = if inner.width >= 32 { 23 } else { 18 };
+    let navigation_width = if content.width >= 32 { 23 } else { 18 };
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(3), Constraint::Length(navigation_width)])
-        .split(inner);
+        .split(content);
     frame.render_widget(title, columns[0]);
 
     let speed_test_active = app.page != Page::History;
@@ -114,6 +115,16 @@ pub fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Paragraph::new(navigation).alignment(Alignment::Right),
         columns[1],
     );
+}
+
+fn horizontal_padding(area: Rect, padding: u16) -> Rect {
+    let inset = padding.min(area.width / 2);
+
+    Rect {
+        x: area.x.saturating_add(inset),
+        width: area.width.saturating_sub(inset.saturating_mul(2)),
+        ..area
+    }
 }
 
 pub fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {

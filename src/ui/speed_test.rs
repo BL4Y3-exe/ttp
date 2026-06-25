@@ -51,12 +51,21 @@ fn speed_test_layout(area: Rect) -> (Option<Rect>, Rect) {
         return (None, area);
     }
 
-    let chunks = Layout::default()
+    let metadata = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(4), Constraint::Min(3)])
-        .split(area);
+        .split(area)[0];
 
-    (Some(chunks[0]), chunks[1])
+    if area.height < 12 {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(4), Constraint::Min(3)])
+            .split(area);
+
+        return (Some(metadata), chunks[1]);
+    }
+
+    (Some(metadata), area)
 }
 
 fn render_mode_panel(frame: &mut Frame<'_>, area: Option<Rect>, app: &App) {
@@ -197,5 +206,13 @@ mod tests {
         assert_eq!(status_area.x, layout.text_area.x);
         assert_eq!(status_area.width, layout.text_area.width);
         assert!(status_area.y < layout.text_area.y);
+    }
+
+    #[test]
+    fn speed_test_text_region_uses_full_main_area_when_tall_enough() {
+        let area = Rect::new(0, 0, 100, 30);
+        let (_metadata, typing_region) = super::speed_test_layout(area);
+
+        assert_eq!(typing_region, area);
     }
 }

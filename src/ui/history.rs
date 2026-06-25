@@ -137,8 +137,8 @@ struct DashboardLayout {
 
 fn dashboard_layout(area: Rect, history_rows: usize) -> DashboardLayout {
     const TODAY_HEIGHT: u16 = 6;
-    const PERSONAL_BESTS_HEIGHT: u16 = 12;
-    const STACKED_PERSONAL_BESTS_HEIGHT: u16 = 21;
+    const PERSONAL_BESTS_HEIGHT: u16 = 8;
+    const STACKED_PERSONAL_BESTS_HEIGHT: u16 = 14;
     const OVERALL_HEIGHT: u16 = 6;
     const SECTION_GAP: u16 = 1;
     const MIN_HISTORY_HEIGHT: u16 = 8;
@@ -356,7 +356,7 @@ fn render_history_table(
         .take(visible_rows)
         .map(|result| {
             Row::new(vec![
-                Cell::from(result.mode_label()),
+                Cell::from(history_mode_label(result)),
                 Cell::from(format!("{:.0}", result.wpm)),
                 Cell::from(format!("{:.0}%", result.accuracy)),
                 Cell::from(result.mistakes.to_string()),
@@ -390,6 +390,14 @@ fn visible_history_rows(inner: Rect) -> Option<usize> {
     }
 
     Some(usize::from(inner.height - 1))
+}
+
+fn history_mode_label(result: &SavedTestResult) -> String {
+    match result.mode_type.as_str() {
+        "time" => format!("time {}", result.mode_value),
+        "words" => format!("words {}", result.mode_value),
+        _ => result.mode_label(),
+    }
 }
 
 fn panel_block<'a>(title: &'a str, palette: theme::default::Palette) -> Block<'a> {
@@ -442,8 +450,8 @@ mod tests {
     use ratatui::layout::Rect;
 
     use super::{
-        compare_personal_best, dashboard_layout, personal_best_for_mode, scroll_max_for_area,
-        today_results, SummaryStats,
+        compare_personal_best, dashboard_layout, history_mode_label, personal_best_for_mode,
+        scroll_max_for_area, today_results, SummaryStats,
     };
     use crate::app::App;
     use crate::storage::models::SavedTestResult;
@@ -546,5 +554,17 @@ mod tests {
         app.open_history();
 
         assert!(scroll_max_for_area(&app, Rect::new(0, 0, 100, 24)) > 0);
+    }
+
+    #[test]
+    fn history_mode_labels_are_explicit_for_profile_display() {
+        assert_eq!(
+            history_mode_label(&saved_result("time", 15, 80.0, 99.0, 0)),
+            "time 15"
+        );
+        assert_eq!(
+            history_mode_label(&saved_result("words", 10, 80.0, 99.0, 0)),
+            "words 10"
+        );
     }
 }
