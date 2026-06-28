@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::core::test_session::TypingSession;
+use crate::core::test_session::{RenderChar, TypingSession};
 
 const VISIBLE_LINES: usize = 3;
 
@@ -32,8 +32,7 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, session: &TypingSession, active
 
 fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
     let target_chars: Vec<char> = session.target_text.chars().collect();
-    let typed_chars: Vec<char> = session.typed_input.chars().collect();
-    let visible_lines = visible_lines(&target_chars, width, session.current_index);
+    let visible_lines = visible_lines(&target_chars, width, session.active_target_index());
     let mut lines = Vec::with_capacity(visible_lines.len());
     let width = usize::from(width).max(1);
 
@@ -47,21 +46,9 @@ fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
             .take(visual_line.end)
             .skip(visual_line.start)
         {
-            if let Some(typed) = typed_chars.get(index).copied() {
-                if typed == expected {
-                    spans.push(Span::styled(
-                        typed.to_string(),
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                } else {
-                    spans.push(Span::styled(
-                        typed.to_string(),
-                        Style::default().fg(Color::Red),
-                    ));
-                }
-            } else if index == session.current_index {
+            if session.word_index_at_target_index(index).is_some() {
+                spans.extend(render_target_index_spans(session, index));
+            } else if index == session.active_target_index() {
                 spans.push(Span::styled(
                     expected.to_string(),
                     Style::default()
@@ -77,7 +64,7 @@ fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
             }
         }
 
-        if hidden_boundary_caret(&target_chars, *visual_line, session.current_index) {
+        if hidden_boundary_caret(&target_chars, *visual_line, session.active_target_index()) {
             let caret = Span::styled(
                 " ",
                 Style::default()
@@ -96,22 +83,45 @@ fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
         lines.push(Line::from(spans));
     }
 
-    if visible_lines
-        .last()
-        .is_some_and(|line| line.end >= target_chars.len())
-        && typed_chars.len() > target_chars.len()
-    {
-        let overflow_spans = typed_chars
-            .iter()
-            .skip(target_chars.len())
-            .map(|typed| Span::styled(typed.to_string(), Style::default().fg(Color::Red)));
+    Text::from(lines)
+}
 
-        if let Some(last_line) = lines.last_mut() {
-            last_line.spans.extend(overflow_spans);
+fn render_target_index_spans(session: &TypingSession, target_index: usize) -> Vec<Span<'static>> {
+    session
+        .render_chars_at_target_index(target_index)
+        .into_iter()
+        .map(render_char_span)
+        .collect()
+}
+
+fn render_char_span(character: RenderChar) -> Span<'static> {
+    match character {
+        RenderChar::Correct(ch) => Span::styled(
+            ch.to_string(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        RenderChar::Wrong(ch) | RenderChar::Extra(ch) => {
+            Span::styled(ch.to_string(), Style::default().fg(Color::Red))
+        }
+        RenderChar::Missed(ch) => Span::styled(
+            ch.to_string(),
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::UNDERLINED),
+        ),
+        RenderChar::Caret(ch) => Span::styled(
+            ch.to_string(),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        RenderChar::Pending(ch) => {
+            Span::styled(ch.to_string(), Style::default().fg(Color::DarkGray))
         }
     }
-
-    Text::from(lines)
 }
 
 fn disabled_text(session: &TypingSession, width: u16) -> Text<'static> {

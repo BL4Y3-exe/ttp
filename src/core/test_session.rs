@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::time::Instant;
 
 use crate::core::scoring::{calculate_accuracy, calculate_wpm};
@@ -78,6 +79,10 @@ pub struct TypingSession {
     pub mistakes: usize,
     pub correct_chars: usize,
     pub incorrect_chars: usize,
+    pub total_keystrokes: usize,
+    words: Vec<WordProgress>,
+    word_ranges: Vec<Range<usize>>,
+    current_word_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -92,8 +97,28 @@ pub struct TestResult {
     pub elapsed_seconds: f64,
 }
 
+#[derive(Debug, Clone)]
+struct WordProgress {
+    target: String,
+    input: String,
+    finished: bool,
+    missed_chars: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderChar {
+    Pending(char),
+    Correct(char),
+    Wrong(char),
+    Missed(char),
+    Extra(char),
+    Caret(char),
+}
+
 impl TypingSession {
     pub fn new(mode: TestMode, target_text: String) -> Self {
+        let (words, word_ranges) = word_progress_from_target(&target_text);
+
         Self {
             mode,
             target_text,
@@ -105,6 +130,10 @@ impl TypingSession {
             mistakes: 0,
             correct_chars: 0,
             incorrect_chars: 0,
+            total_keystrokes: 0,
+            words,
+            word_ranges,
+            current_word_index: 0,
         }
     }
 
@@ -116,23 +145,119 @@ impl TypingSession {
             return;
         }
 
-        if self.status == SessionStatus::Waiting {
-            self.status = SessionStatus::Running;
-            self.started_at = Some(Instant::now());
+        if ch == ' ' {
+            self.finish_current_word_from_space();
+            return;
         }
 
-        let expected = self.target_text.chars().nth(self.current_index);
-        self.typed_input.push(ch);
+        if self.words.is_empty() {
+            return;
+        }
+
+        self.start_if_waiting();
+
+        let word_index = self
+            .current_word_index
+            .min(self.words.len().saturating_sub(1));
+        let input_index = self.words[word_index].input.chars().count();
+        let expected = self.words[word_index].target.chars().nth(input_index);
+
+        self.words[word_index].input.push(ch);
+        self.total_keystrokes += 1;
 
         if expected == Some(ch) {
             self.correct_chars += 1;
         } else {
-            self.incorrect_chars += 1;
-            self.mistakes += 1;
+            self.record_errors(1);
         }
 
-        self.current_index += 1;
+        self.sync_legacy_input();
+        self.update_current_index();
         self.update_completion_status();
+    }
+
+    pub fn render_chars_for_word(&self, word_index: usize) -> Vec<RenderChar> {
+        let Some(word) = self.words.get(word_index) else {
+            return Vec::new();
+        };
+
+        let target_chars = word.target.chars().collect::<Vec<_>>();
+        let input_chars = word.input.chars().collect::<Vec<_>>();
+        let mut rendered = Vec::with_capacity(target_chars.len().max(input_chars.len()));
+        let active = self.status != SessionStatus::Finished
+            && self.status != SessionStatus::Aborted
+            && word_index == self.current_word_index;
+
+        for (index, expected) in target_chars.iter().copied().enumerate() {
+            if let Some(typed) = input_chars.get(index).copied() {
+                if typed == expected {
+                    rendered.push(RenderChar::Correct(typed));
+                } else {
+                    rendered.push(RenderChar::Wrong(typed));
+                }
+            } else if word.finished && index < input_chars.len() + word.missed_chars {
+                rendered.push(RenderChar::Missed(expected));
+            } else if active && index == input_chars.len() {
+                rendered.push(RenderChar::Caret(expected));
+            } else {
+                rendered.push(RenderChar::Pending(expected));
+            }
+        }
+
+        rendered.extend(
+            input_chars
+                .iter()
+                .copied()
+                .skip(target_chars.len())
+                .map(RenderChar::Extra),
+        );
+
+        rendered
+    }
+
+    pub fn render_chars_at_target_index(&self, target_index: usize) -> Vec<RenderChar> {
+        let Some(word_index) = self.word_index_at_target_index(target_index) else {
+            return Vec::new();
+        };
+        let Some(range) = self.word_ranges.get(word_index) else {
+            return Vec::new();
+        };
+
+        let offset = target_index.saturating_sub(range.start);
+        let mut rendered = self
+            .render_chars_for_word(word_index)
+            .get(offset)
+            .cloned()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        if target_index + 1 == range.end {
+            let target_len = self.words[word_index].target.chars().count();
+            rendered.extend(
+                self.render_chars_for_word(word_index)
+                    .into_iter()
+                    .skip(target_len),
+            );
+        }
+
+        rendered
+    }
+
+    pub fn word_index_at_target_index(&self, target_index: usize) -> Option<usize> {
+        self.word_ranges
+            .iter()
+            .position(|range| range.start <= target_index && target_index < range.end)
+    }
+
+    pub fn active_target_index(&self) -> usize {
+        self.current_index
+    }
+
+    fn start_if_waiting(&mut self) {
+        if self.status == SessionStatus::Waiting {
+            self.status = SessionStatus::Running;
+            self.started_at = Some(Instant::now());
+        }
     }
 
     pub fn backspace(&mut self) {
@@ -143,12 +268,17 @@ impl TypingSession {
             return;
         }
 
-        if self.typed_input.pop().is_none() {
+        let Some(word) = self.words.get_mut(self.current_word_index) else {
+            return;
+        };
+
+        if word.input.pop().is_none() {
             return;
         }
 
-        self.current_index = self.current_index.saturating_sub(1);
-        self.recalculate_counts();
+        self.sync_legacy_input();
+        self.update_current_index();
+        self.update_completion_status();
     }
 
     pub fn abort(&mut self) {
@@ -181,7 +311,16 @@ impl TypingSession {
     }
 
     pub fn completed_words(&self) -> usize {
-        completed_words_at(&self.target_text, self.current_index)
+        self.words
+            .iter()
+            .enumerate()
+            .filter(|(index, word)| {
+                word.finished
+                    || (*index == self.current_word_index
+                        && *index + 1 == self.words.len()
+                        && word.input == word.target)
+            })
+            .count()
     }
 
     pub fn result(&self) -> Option<TestResult> {
@@ -189,13 +328,13 @@ impl TypingSession {
             return None;
         }
 
-        let total_typed_chars = self.typed_input.chars().count();
+        let total_typed_chars = self.total_keystrokes;
         let elapsed_seconds = self.elapsed_seconds();
 
         Some(TestResult {
             mode: self.mode,
             wpm: calculate_wpm(self.correct_chars, elapsed_seconds),
-            accuracy: calculate_accuracy(self.correct_chars, total_typed_chars),
+            accuracy: calculate_accuracy(self.mistakes, self.total_keystrokes),
             mistakes: self.mistakes,
             correct_chars: self.correct_chars,
             incorrect_chars: self.incorrect_chars,
@@ -205,13 +344,21 @@ impl TypingSession {
     }
 
     fn update_completion_status(&mut self) {
+        if self.last_word_is_exactly_correct() {
+            self.finish();
+            return;
+        }
+
         match self.mode {
-            TestMode::Words(_) => {
-                if self.current_index >= self.target_text.chars().count() {
+            TestMode::Words(_) | TestMode::Time(_) => {
+                if self.words.last().is_some_and(|word| word.finished) {
                     self.finish();
                 }
             }
-            TestMode::Time(_) => self.update_time_status(),
+        }
+
+        if matches!(self.mode, TestMode::Time(_)) {
+            self.update_time_status();
         }
     }
 
@@ -220,25 +367,92 @@ impl TypingSession {
         self.finished_at = Some(Instant::now());
     }
 
-    fn recalculate_counts(&mut self) {
-        self.correct_chars = 0;
-        self.incorrect_chars = 0;
-        self.mistakes = 0;
-
-        for (index, typed) in self.typed_input.chars().enumerate() {
-            if self.target_text.chars().nth(index) == Some(typed) {
-                self.correct_chars += 1;
-            } else {
-                self.incorrect_chars += 1;
-                self.mistakes += 1;
-            }
+    fn finish_current_word_from_space(&mut self) {
+        if self.words.is_empty() {
+            return;
         }
+
+        let word_index = self
+            .current_word_index
+            .min(self.words.len().saturating_sub(1));
+        let input_len = self.words[word_index].input.chars().count();
+
+        if input_len == 0 {
+            return;
+        }
+
+        self.start_if_waiting();
+        self.total_keystrokes += 1;
+
+        let target_len = self.words[word_index].target.chars().count();
+        let missed_chars = target_len.saturating_sub(input_len);
+        self.words[word_index].missed_chars = missed_chars;
+        self.words[word_index].finished = true;
+        self.record_errors(missed_chars);
+
+        if word_index + 1 < self.words.len() {
+            self.current_word_index += 1;
+        }
+
+        self.sync_legacy_input();
+        self.update_current_index();
+        self.update_completion_status();
+    }
+
+    fn record_errors(&mut self, count: usize) {
+        self.incorrect_chars += count;
+        self.mistakes += count;
+    }
+
+    fn last_word_is_exactly_correct(&self) -> bool {
+        let Some(last_word) = self.words.last() else {
+            return false;
+        };
+
+        self.current_word_index + 1 == self.words.len()
+            && !last_word.finished
+            && last_word.input == last_word.target
+    }
+
+    fn sync_legacy_input(&mut self) {
+        self.typed_input = self
+            .words
+            .iter()
+            .enumerate()
+            .take_while(|(index, word)| *index <= self.current_word_index || word.finished)
+            .map(|(_, word)| word.input.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+
+    fn update_current_index(&mut self) {
+        if self.words.is_empty() {
+            self.current_index = 0;
+            return;
+        }
+
+        if self.status == SessionStatus::Finished {
+            self.current_index = self.target_text.chars().count();
+            return;
+        }
+
+        let word_index = self
+            .current_word_index
+            .min(self.words.len().saturating_sub(1));
+        let Some(range) = self.word_ranges.get(word_index) else {
+            self.current_index = self.target_text.chars().count();
+            return;
+        };
+
+        let input_len = self.words[word_index].input.chars().count();
+        self.current_index = range.start + input_len.min(range.end.saturating_sub(range.start));
     }
 }
 
-fn completed_words_at(target_text: &str, current_index: usize) -> usize {
+fn word_progress_from_target(target_text: &str) -> (Vec<WordProgress>, Vec<Range<usize>>) {
     let chars = target_text.chars().collect::<Vec<_>>();
-    let mut completed = 0;
+    let mut words = Vec::new();
+    let mut ranges = Vec::new();
     let mut index = 0;
 
     while index < chars.len() {
@@ -250,30 +464,29 @@ fn completed_words_at(target_text: &str, current_index: usize) -> usize {
             break;
         }
 
-        let word_start = index;
-
+        let start = index;
         while index < chars.len() && !chars[index].is_whitespace() {
             index += 1;
         }
 
-        let word_end = index;
-        let is_final_word = index >= chars.len();
-        let passed_boundary = current_index > word_end;
-        let completed_final_word = is_final_word && current_index >= word_end;
-
-        if word_end > word_start && (passed_boundary || completed_final_word) {
-            completed += 1;
-        }
+        let target = chars[start..index].iter().collect::<String>();
+        words.push(WordProgress {
+            target,
+            input: String::new(),
+            finished: false,
+            missed_chars: 0,
+        });
+        ranges.push(start..index);
     }
 
-    completed
+    (words, ranges)
 }
 
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
 
-    use super::{SessionStatus, TestMode, TypingSession};
+    use super::{RenderChar, SessionStatus, TestMode, TypingSession};
 
     #[test]
     fn test_mode_labels_are_correct() {
@@ -367,11 +580,11 @@ mod tests {
 
         assert_eq!(session.typed_input, "h");
         assert_eq!(session.current_index, 1);
-        assert_eq!(session.correct_chars, 1);
+        assert_eq!(session.correct_chars, 2);
     }
 
     #[test]
-    fn backspace_recalculates_counters_correctly() {
+    fn backspace_does_not_remove_historical_errors() {
         let mut session = TypingSession::new(TestMode::Time(30), "hello".to_owned());
 
         session.input_char('h');
@@ -380,8 +593,8 @@ mod tests {
 
         assert_eq!(session.typed_input, "h");
         assert_eq!(session.correct_chars, 1);
-        assert_eq!(session.incorrect_chars, 0);
-        assert_eq!(session.mistakes, 0);
+        assert_eq!(session.incorrect_chars, 1);
+        assert_eq!(session.mistakes, 1);
     }
 
     #[test]
@@ -421,12 +634,12 @@ mod tests {
     }
 
     #[test]
-    fn time_mode_does_not_finish_when_target_text_is_exhausted() {
+    fn time_mode_finishes_when_last_word_is_exactly_correct() {
         let mut session = TypingSession::new(TestMode::Time(30), "a".to_owned());
 
         session.input_char('a');
 
-        assert_eq!(session.status, SessionStatus::Running);
+        assert_eq!(session.status, SessionStatus::Finished);
     }
 
     #[test]
@@ -451,5 +664,138 @@ mod tests {
         }
 
         assert_eq!(session.completed_words(), 2);
+    }
+
+    #[test]
+    fn space_at_beginning_of_word_is_ignored() {
+        let mut session = TypingSession::new(TestMode::Words(2), "form those".to_owned());
+
+        session.input_char(' ');
+
+        assert_eq!(session.status, SessionStatus::Waiting);
+        assert_eq!(session.current_index, 0);
+        assert_eq!(session.typed_input, "");
+        assert_eq!(session.total_keystrokes, 0);
+        assert_eq!(session.mistakes, 0);
+    }
+
+    #[test]
+    fn space_after_partial_word_marks_remaining_letters_missed() {
+        let mut session = TypingSession::new(TestMode::Words(2), "through say".to_owned());
+
+        for character in "thr".chars() {
+            session.input_char(character);
+        }
+        session.input_char(' ');
+
+        assert_eq!(session.current_index, 8);
+        assert_eq!(session.completed_words(), 1);
+        assert_eq!(session.total_keystrokes, 4);
+        assert_eq!(session.mistakes, 4);
+        assert_eq!(
+            session.render_chars_for_word(0),
+            vec![
+                RenderChar::Correct('t'),
+                RenderChar::Correct('h'),
+                RenderChar::Correct('r'),
+                RenderChar::Missed('o'),
+                RenderChar::Missed('u'),
+                RenderChar::Missed('g'),
+                RenderChar::Missed('h'),
+            ]
+        );
+    }
+
+    #[test]
+    fn extra_letters_stay_attached_to_current_word() {
+        let mut session = TypingSession::new(TestMode::Words(2), "form those".to_owned());
+
+        for character in "formm".chars() {
+            session.input_char(character);
+        }
+
+        assert_eq!(session.current_index, 4);
+        assert_eq!(session.completed_words(), 0);
+        assert_eq!(session.total_keystrokes, 5);
+        assert_eq!(session.mistakes, 1);
+        assert_eq!(
+            session.render_chars_for_word(0),
+            vec![
+                RenderChar::Correct('f'),
+                RenderChar::Correct('o'),
+                RenderChar::Correct('r'),
+                RenderChar::Correct('m'),
+                RenderChar::Extra('m'),
+            ]
+        );
+        assert_eq!(
+            session.render_chars_for_word(1),
+            vec![
+                RenderChar::Pending('t'),
+                RenderChar::Pending('h'),
+                RenderChar::Pending('o'),
+                RenderChar::Pending('s'),
+                RenderChar::Pending('e'),
+            ]
+        );
+    }
+
+    #[test]
+    fn correct_last_word_auto_finishes() {
+        let mut session = TypingSession::new(TestMode::Words(2), "form say".to_owned());
+
+        for character in "form say".chars() {
+            session.input_char(character);
+        }
+
+        assert_eq!(session.status, SessionStatus::Finished);
+        assert_eq!(session.completed_words(), 2);
+    }
+
+    #[test]
+    fn wrong_last_word_does_not_auto_finish_until_corrected_or_committed() {
+        let mut session = TypingSession::new(TestMode::Words(2), "form say".to_owned());
+
+        for character in "form sat".chars() {
+            session.input_char(character);
+        }
+
+        assert_eq!(session.status, SessionStatus::Running);
+
+        session.backspace();
+        session.input_char('y');
+
+        assert_eq!(session.status, SessionStatus::Finished);
+    }
+
+    #[test]
+    fn wrong_last_word_can_finish_with_space() {
+        let mut session = TypingSession::new(TestMode::Words(2), "form say".to_owned());
+
+        for character in "form sat".chars() {
+            session.input_char(character);
+        }
+        session.input_char(' ');
+
+        assert_eq!(session.status, SessionStatus::Finished);
+    }
+
+    #[test]
+    fn corrected_mistake_still_affects_accuracy() {
+        let mut session = TypingSession::new(TestMode::Words(1), "form".to_owned());
+
+        session.input_char('f');
+        session.input_char('x');
+        session.backspace();
+        for character in "orm".chars() {
+            session.input_char(character);
+        }
+
+        let result = session.result().expect("finished result");
+        assert_eq!(session.status, SessionStatus::Finished);
+        assert_eq!(session.typed_input, "form");
+        assert_eq!(result.mistakes, 1);
+        assert!(result.accuracy < 100.0);
+        assert_eq!(result.accuracy, 80.0);
     }
 }

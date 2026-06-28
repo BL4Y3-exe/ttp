@@ -7,12 +7,13 @@ pub fn calculate_wpm(correct_chars: usize, elapsed_seconds: f64) -> f64 {
     (correct_chars as f64 / 5.0) / minutes
 }
 
-pub fn calculate_accuracy(correct_chars: usize, total_typed_chars: usize) -> f64 {
-    if total_typed_chars == 0 {
-        return 0.0;
+pub fn calculate_accuracy(total_errors: usize, total_keystrokes: usize) -> f64 {
+    if total_keystrokes == 0 {
+        return 100.0;
     }
 
-    (correct_chars as f64 / total_typed_chars as f64) * 100.0
+    let accuracy = (1.0 - (total_errors as f64 / total_keystrokes as f64)) * 100.0;
+    accuracy.clamp(0.0, 100.0)
 }
 
 #[cfg(test)]
@@ -25,13 +26,18 @@ mod tests {
     }
 
     #[test]
-    fn accuracy_is_zero_without_input() {
-        assert_eq!(calculate_accuracy(0, 0), 0.0);
+    fn accuracy_is_perfect_without_input() {
+        assert_eq!(calculate_accuracy(0, 0), 100.0);
     }
 
     #[test]
     fn calculates_accuracy_percentage() {
-        assert_eq!(calculate_accuracy(45, 50), 90.0);
+        assert_eq!(calculate_accuracy(5, 50), 90.0);
+    }
+
+    #[test]
+    fn clamps_accuracy_to_zero() {
+        assert_eq!(calculate_accuracy(12, 10), 0.0);
     }
 
     #[test]

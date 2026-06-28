@@ -113,9 +113,9 @@ If those paths are unavailable, `ttp` falls back to local files under `./.ttp/`.
 
 ## Project Status
 
-The project is currently at v0.2.3 and remains in active development.
+The project is currently at v0.2.4 and remains in active development.
 
-v0.2.3 adds a panel-based Ratatui UI polish pass with a persistent header, result card, and responsive profile dashboard.
+v0.2.4 adds word-aware typing behavior, Monkeytype-style Space handling, extra-character handling, and keypress-based accuracy.
 
 Future versions may add broader config-file support, themes, UI customization, caret options, an activity grid, and speed or accuracy graphs. These features are not implemented yet.
 
