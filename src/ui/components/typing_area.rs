@@ -14,6 +14,15 @@ struct VisualLine {
     end: usize,
 }
 
+#[derive(Debug, Clone)]
+struct RenderCell {
+    span: Span<'static>,
+    target_index: usize,
+    is_space: bool,
+    is_caret: bool,
+    is_active_word: bool,
+}
+
 pub fn render(frame: &mut Frame<'_>, area: Rect, session: &TypingSession, active: bool) {
     if area.width == 0 || area.height == 0 {
         return;
@@ -31,67 +40,163 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, session: &TypingSession, active
 }
 
 fn active_text(session: &TypingSession, width: u16) -> Text<'static> {
+    let cells = active_render_cells(session);
+    let wrapped_lines = wrap_render_cells(&cells, width);
+    let active_line =
+        active_render_line_index(&cells, &wrapped_lines, session.active_target_index());
+    let first_visible = first_visible_line(active_line, wrapped_lines.len());
+    let lines = wrapped_lines
+        .iter()
+        .skip(first_visible)
+        .take(VISIBLE_LINES)
+        .map(|line| {
+            Line::from(
+                cells[line.start..line.end]
+                    .iter()
+                    .map(|cell| cell.span.clone())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    Text::from(lines)
+}
+
+fn active_render_cells(session: &TypingSession) -> Vec<RenderCell> {
     let target_chars: Vec<char> = session.target_text.chars().collect();
-    let visible_lines = visible_lines(&target_chars, width, session.active_target_index());
-    let mut lines = Vec::with_capacity(visible_lines.len());
-    let width = usize::from(width).max(1);
+    let mut cells = Vec::new();
 
-    for visual_line in &visible_lines {
-        let mut spans = Vec::with_capacity(visual_line.end.saturating_sub(visual_line.start));
-
-        for (index, expected) in target_chars
-            .iter()
-            .copied()
-            .enumerate()
-            .take(visual_line.end)
-            .skip(visual_line.start)
-        {
-            if session.word_index_at_target_index(index).is_some() {
-                spans.extend(render_target_index_spans(session, index));
-            } else if index == session.active_target_index() {
-                spans.push(Span::styled(
+    for (index, expected) in target_chars.iter().copied().enumerate() {
+        if let Some(word_index) = session.word_index_at_target_index(index) {
+            cells.extend(session.render_chars_at_target_index(index).into_iter().map(
+                |character| {
+                    let is_caret = matches!(character, RenderChar::Caret(_));
+                    RenderCell {
+                        span: render_char_span(character),
+                        target_index: index,
+                        is_space: false,
+                        is_caret,
+                        is_active_word: word_index == session.active_word_index(),
+                    }
+                },
+            ));
+        } else {
+            let is_caret = index == session.active_target_index();
+            let span = if is_caret {
+                Span::styled(
                     expected.to_string(),
                     Style::default()
                         .fg(Color::Black)
                         .bg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
-                ));
+                )
             } else {
-                spans.push(Span::styled(
-                    expected.to_string(),
-                    Style::default().fg(Color::DarkGray),
-                ));
-            }
+                Span::styled(expected.to_string(), Style::default().fg(Color::DarkGray))
+            };
+
+            cells.push(RenderCell {
+                span,
+                target_index: index,
+                is_space: expected.is_whitespace(),
+                is_caret,
+                is_active_word: false,
+            });
         }
-
-        if hidden_boundary_caret(&target_chars, *visual_line, session.active_target_index()) {
-            let caret = Span::styled(
-                " ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            );
-
-            if spans.len() < width {
-                spans.push(caret);
-            } else if let Some(last_span) = spans.last_mut() {
-                *last_span = caret;
-            }
-        }
-
-        lines.push(Line::from(spans));
     }
 
-    Text::from(lines)
+    if cells.is_empty() {
+        cells.push(RenderCell {
+            span: Span::raw(""),
+            target_index: 0,
+            is_space: false,
+            is_caret: true,
+            is_active_word: false,
+        });
+    }
+
+    cells
 }
 
-fn render_target_index_spans(session: &TypingSession, target_index: usize) -> Vec<Span<'static>> {
-    session
-        .render_chars_at_target_index(target_index)
-        .into_iter()
-        .map(render_char_span)
-        .collect()
+fn wrap_render_cells(cells: &[RenderCell], width: u16) -> Vec<VisualLine> {
+    if cells.is_empty() {
+        return vec![VisualLine { start: 0, end: 0 }];
+    }
+
+    let max_width = usize::from(width).max(1);
+    let mut lines = Vec::new();
+    let mut start = 0;
+
+    while start < cells.len() {
+        let mut end = start;
+        let mut last_space_after = None;
+
+        while end < cells.len() && end - start < max_width {
+            if cells[end].is_space {
+                last_space_after = Some(end + 1);
+            }
+
+            end += 1;
+        }
+
+        if end >= cells.len() {
+            lines.push(VisualLine {
+                start,
+                end: cells.len(),
+            });
+            break;
+        }
+
+        let line_end = last_space_after
+            .filter(|break_after| *break_after > start && *break_after < end)
+            .unwrap_or(end);
+
+        lines.push(VisualLine {
+            start,
+            end: line_end,
+        });
+
+        start = line_end;
+
+        while start < cells.len() && cells[start].is_space {
+            start += 1;
+        }
+    }
+
+    lines
+}
+
+fn active_render_line_index(
+    cells: &[RenderCell],
+    lines: &[VisualLine],
+    active_target_index: usize,
+) -> usize {
+    if lines.is_empty() {
+        return 0;
+    }
+
+    if let Some(cell_index) = cells.iter().position(|cell| cell.is_caret) {
+        return render_line_index_for_cell(lines, cell_index);
+    }
+
+    if let Some(cell_index) = cells.iter().rposition(|cell| cell.is_active_word) {
+        return render_line_index_for_cell(lines, cell_index);
+    }
+
+    if let Some(cell_index) = cells
+        .iter()
+        .rposition(|cell| cell.target_index <= active_target_index)
+    {
+        return render_line_index_for_cell(lines, cell_index);
+    }
+
+    0
+}
+
+fn render_line_index_for_cell(lines: &[VisualLine], cell_index: usize) -> usize {
+    lines
+        .iter()
+        .position(|line| cell_index >= line.start && cell_index < line.end)
+        .unwrap_or_else(|| lines.len().saturating_sub(1))
 }
 
 fn render_char_span(character: RenderChar) -> Span<'static> {
@@ -108,7 +213,7 @@ fn render_char_span(character: RenderChar) -> Span<'static> {
         RenderChar::Missed(ch) => Span::styled(
             ch.to_string(),
             Style::default()
-                .fg(Color::Red)
+                .fg(Color::DarkGray)
                 .add_modifier(Modifier::UNDERLINED),
         ),
         RenderChar::Caret(ch) => Span::styled(
@@ -255,8 +360,13 @@ fn hidden_boundary_caret(target_chars: &[char], line: VisualLine, current_index:
 
 #[cfg(test)]
 mod tests {
+    use ratatui::style::{Color, Modifier};
+
+    use crate::core::test_session::{TestMode, TypingSession};
+
     use super::{
-        active_line_index, first_visible_line, hidden_boundary_caret, wrap_lines, VisualLine,
+        active_line_index, active_render_cells, first_visible_line, hidden_boundary_caret,
+        wrap_lines, wrap_render_cells, VisualLine,
     };
 
     fn chars(input: &str) -> Vec<char> {
@@ -347,5 +457,43 @@ mod tests {
     fn keeps_last_three_lines_visible_at_the_end() {
         assert_eq!(first_visible_line(4, 5), 2);
         assert_eq!(first_visible_line(5, 6), 3);
+    }
+
+    #[test]
+    fn missed_letters_are_underlined_without_red_glyphs() {
+        let mut session = TypingSession::new(TestMode::Words(2), "people know".to_owned());
+
+        for character in "peop ".chars() {
+            session.input_char(character);
+        }
+
+        let cells = active_render_cells(&session);
+        let missed_l = cells
+            .iter()
+            .find(|cell| cell.span.content.as_ref() == "l")
+            .expect("missed l cell");
+
+        assert_eq!(missed_l.span.style.fg, Some(Color::DarkGray));
+        assert!(missed_l
+            .span
+            .style
+            .add_modifier
+            .contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn rendered_cells_wrap_long_extra_input() {
+        let mut session = TypingSession::new(TestMode::Words(2), "form those".to_owned());
+
+        for character in "formmmmmmmmm".chars() {
+            session.input_char(character);
+        }
+
+        let cells = active_render_cells(&session);
+        let lines = wrap_render_cells(&cells, 6);
+
+        assert!(lines.len() > 1);
+        assert!(lines.iter().all(|line| line.end - line.start <= 6));
+        assert!(cells.iter().any(|cell| cell.span.content.as_ref() == "t"));
     }
 }
