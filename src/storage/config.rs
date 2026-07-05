@@ -7,14 +7,21 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub last_selected_mode: String,
+    #[serde(default = "default_language_mode")]
+    pub language_mode: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             last_selected_mode: "30s".to_owned(),
+            language_mode: default_language_mode(),
         }
     }
+}
+
+fn default_language_mode() -> String {
+    "english".to_owned()
 }
 
 pub fn load_config() -> Result<AppConfig> {
@@ -94,5 +101,10 @@ mod tests {
     #[test]
     fn app_config_default_mode_is_30s() {
         assert_eq!(AppConfig::default().last_selected_mode, "30s");
+    }
+
+    #[test]
+    fn app_config_default_language_mode_is_english() {
+        assert_eq!(AppConfig::default().language_mode, "english");
     }
 }

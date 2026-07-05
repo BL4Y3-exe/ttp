@@ -56,11 +56,25 @@ impl Database {
                     incorrect_chars INTEGER NOT NULL,
                     total_typed_chars INTEGER NOT NULL,
                     elapsed_seconds REAL NOT NULL,
+                    language_mode TEXT NOT NULL DEFAULT 'english',
                     created_at TEXT NOT NULL
                 )",
                 [],
             )
             .context("failed to initialize test_results table")?;
+        self.conn
+            .execute(
+                "ALTER TABLE test_results ADD COLUMN language_mode TEXT NOT NULL DEFAULT 'english'",
+                [],
+            )
+            .or_else(|error| {
+                if is_duplicate_column_error(&error) {
+                    Ok(0)
+                } else {
+                    Err(error)
+                }
+            })
+            .context("failed to add language_mode column to test_results")?;
 
         Ok(())
     }
@@ -78,8 +92,9 @@ impl Database {
                     incorrect_chars,
                     total_typed_chars,
                     elapsed_seconds,
+                    language_mode,
                     created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     &result.mode_type,
                     result.mode_value,
@@ -90,6 +105,7 @@ impl Database {
                     result.incorrect_chars as i64,
                     result.total_typed_chars as i64,
                     result.elapsed_seconds,
+                    &result.language_mode,
                     result.created_at.to_rfc3339(),
                 ],
             )
@@ -114,6 +130,7 @@ impl Database {
                     incorrect_chars,
                     total_typed_chars,
                     elapsed_seconds,
+                    language_mode,
                     created_at
                 FROM test_results
                 ORDER BY id DESC
@@ -123,7 +140,7 @@ impl Database {
 
         let rows = statement
             .query_map(params![limit], |row| {
-                let created_at: String = row.get(10)?;
+                let created_at: String = row.get(11)?;
                 let created_at = DateTime::parse_from_rfc3339(&created_at)
                     .map(|timestamp| timestamp.with_timezone(&Local))
                     .unwrap_or_else(|_| Local::now());
@@ -139,6 +156,7 @@ impl Database {
                     incorrect_chars: row.get::<_, i64>(7)? as usize,
                     total_typed_chars: row.get::<_, i64>(8)? as usize,
                     elapsed_seconds: row.get(9)?,
+                    language_mode: row.get(10)?,
                     created_at,
                 })
             })
@@ -163,6 +181,7 @@ impl Database {
                     incorrect_chars,
                     total_typed_chars,
                     elapsed_seconds,
+                    language_mode,
                     created_at
                 FROM test_results
                 ORDER BY id DESC",
@@ -171,7 +190,7 @@ impl Database {
 
         let rows = statement
             .query_map([], |row| {
-                let created_at: String = row.get(10)?;
+                let created_at: String = row.get(11)?;
                 let created_at = DateTime::parse_from_rfc3339(&created_at)
                     .map(|timestamp| timestamp.with_timezone(&Local))
                     .unwrap_or_else(|_| Local::now());
@@ -187,6 +206,7 @@ impl Database {
                     incorrect_chars: row.get::<_, i64>(7)? as usize,
                     total_typed_chars: row.get::<_, i64>(8)? as usize,
                     elapsed_seconds: row.get(9)?,
+                    language_mode: row.get(10)?,
                     created_at,
                 })
             })
@@ -232,6 +252,10 @@ fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     }
 
     deduped
+}
+
+fn is_duplicate_column_error(error: &rusqlite::Error) -> bool {
+    error.to_string().contains("duplicate column name")
 }
 
 #[cfg(test)]

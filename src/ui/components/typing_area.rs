@@ -351,6 +351,7 @@ fn first_visible_line(active_line: usize, total_lines: usize) -> usize {
     }
 }
 
+#[cfg(test)]
 fn hidden_boundary_caret(target_chars: &[char], line: VisualLine, current_index: usize) -> bool {
     current_index == line.end
         && target_chars

@@ -1,5 +1,6 @@
 use chrono::{DateTime, Local};
 
+use crate::core::language_modes::LanguageMode;
 use crate::core::test_session::TestResult;
 
 #[derive(Debug, Clone)]
@@ -15,11 +16,20 @@ pub struct SavedTestResult {
     pub incorrect_chars: usize,
     pub total_typed_chars: usize,
     pub elapsed_seconds: f64,
+    pub language_mode: String,
     pub created_at: DateTime<Local>,
 }
 
 impl SavedTestResult {
+    #[cfg(test)]
     pub fn from_test_result(result: &TestResult) -> Self {
+        Self::from_test_result_with_language(result, LanguageMode::default())
+    }
+
+    pub fn from_test_result_with_language(
+        result: &TestResult,
+        language_mode: LanguageMode,
+    ) -> Self {
         Self {
             id: None,
             mode_type: result.mode.mode_type().to_owned(),
@@ -31,6 +41,7 @@ impl SavedTestResult {
             incorrect_chars: result.incorrect_chars,
             total_typed_chars: result.total_typed_chars,
             elapsed_seconds: result.elapsed_seconds,
+            language_mode: language_mode.label().to_owned(),
             created_at: Local::now(),
         }
     }
@@ -74,6 +85,7 @@ mod tests {
         assert_eq!(saved.incorrect_chars, 3);
         assert_eq!(saved.total_typed_chars, 203);
         assert_eq!(saved.elapsed_seconds, 30.0);
+        assert_eq!(saved.language_mode, "english");
     }
 
     #[test]

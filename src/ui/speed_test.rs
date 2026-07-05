@@ -9,6 +9,9 @@ use crate::theme;
 use crate::ui::components::shell::centered_rect;
 use crate::ui::components::typing_area;
 
+const MODE_PANEL_MIN_WIDTH: u16 = 38;
+const MODE_PANEL_HORIZONTAL_PADDING: u16 = 2;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TypingScreenLayout {
     text_area: Rect,
@@ -77,28 +80,54 @@ fn render_mode_panel(frame: &mut Frame<'_>, area: Option<Rect>, app: &App) {
         return;
     }
 
-    let panel = centered_rect(area, 38, 3);
+    let label = mode_panel_label(app);
+    let panel = centered_rect(area, mode_panel_width(&label, area.width), 3);
     let palette = theme::default::palette();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(palette.muted));
-    let inner = block.inner(panel);
+    let inner = padded_mode_panel_inner(block.inner(panel));
 
     frame.render_widget(block, panel);
     frame.render_widget(
-        Paragraph::new(format!(
-            "mode: {}  |  language: english",
-            app.current_mode.label()
-        ))
-        .style(
-            Style::default()
-                .fg(palette.text)
-                .add_modifier(Modifier::BOLD),
-        )
-        .alignment(Alignment::Center),
+        Paragraph::new(label)
+            .style(
+                Style::default()
+                    .fg(palette.text)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .alignment(Alignment::Center),
         inner,
     );
+}
+
+fn mode_panel_label(app: &App) -> String {
+    format!(
+        "mode: {}  |  language: {}",
+        app.current_mode.label(),
+        app.current_language_mode.label()
+    )
+}
+
+fn mode_panel_width(label: &str, max_width: u16) -> u16 {
+    let desired_width = u16::try_from(label.chars().count())
+        .unwrap_or(u16::MAX)
+        .saturating_add(MODE_PANEL_HORIZONTAL_PADDING.saturating_mul(2))
+        .saturating_add(2)
+        .max(MODE_PANEL_MIN_WIDTH);
+
+    desired_width.min(max_width)
+}
+
+fn padded_mode_panel_inner(area: Rect) -> Rect {
+    let padding = MODE_PANEL_HORIZONTAL_PADDING.min(area.width / 2);
+
+    Rect {
+        x: area.x.saturating_add(padding),
+        width: area.width.saturating_sub(padding.saturating_mul(2)),
+        ..area
+    }
 }
 
 fn typing_screen_layout(area: Rect) -> TypingScreenLayout {
@@ -172,7 +201,7 @@ fn format_status(session: &crate::core::test_session::TypingSession) -> String {
 mod tests {
     use ratatui::layout::Rect;
 
-    use super::typing_screen_layout;
+    use super::{mode_panel_width, padded_mode_panel_inner, typing_screen_layout};
 
     #[test]
     fn uses_nine_eighty_two_nine_horizontal_split() {
@@ -214,5 +243,29 @@ mod tests {
         let (_metadata, typing_region) = super::speed_test_layout(area);
 
         assert_eq!(typing_region, area);
+    }
+
+    #[test]
+    fn mode_panel_width_grows_for_long_language_labels() {
+        let short = mode_panel_width("mode: 15s  |  language: english", 100);
+        let long = mode_panel_width("mode: 15s  |  language: azerbaijani-hard", 100);
+
+        assert!(long > short);
+        assert!(short >= super::MODE_PANEL_MIN_WIDTH);
+    }
+
+    #[test]
+    fn mode_panel_width_clamps_to_available_terminal_width() {
+        let width = mode_panel_width("mode: 15s  |  language: azerbaijani-hard", 20);
+
+        assert_eq!(width, 20);
+    }
+
+    #[test]
+    fn mode_panel_inner_keeps_horizontal_padding_when_possible() {
+        let inner = padded_mode_panel_inner(Rect::new(10, 0, 20, 1));
+
+        assert_eq!(inner.x, 12);
+        assert_eq!(inner.width, 16);
     }
 }
