@@ -12,7 +12,11 @@ use clap::Parser;
 use crate::app::App;
 
 #[derive(Debug, Parser)]
-#[command(name = "ttp", version, about = "A terminal typing practice app")]
+#[command(
+    name = "ttp",
+    version = concat!("v", env!("CARGO_PKG_VERSION")),
+    about = "A terminal typing practice app"
+)]
 struct Cli;
 
 fn main() -> Result<()> {
