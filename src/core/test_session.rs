@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::time::Instant;
 
-use crate::core::scoring::{calculate_accuracy, calculate_wpm};
+use crate::core::scoring::{calculate_accuracy, calculate_correct_chars, calculate_wpm};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TestMode {
@@ -167,13 +167,12 @@ impl TypingSession {
         self.words[word_index].input.push(ch);
         self.total_keystrokes += 1;
 
-        if expected == Some(ch) {
-            self.correct_chars += 1;
-        } else {
+        if expected != Some(ch) {
             self.record_errors(1);
         }
 
         self.sync_legacy_input();
+        self.refresh_correct_chars();
         self.refresh_final_mistakes();
         self.update_current_index();
         self.update_completion_status();
@@ -285,6 +284,7 @@ impl TypingSession {
         }
 
         self.sync_legacy_input();
+        self.refresh_correct_chars();
         self.refresh_final_mistakes();
         self.update_current_index();
         self.update_completion_status();
@@ -404,6 +404,7 @@ impl TypingSession {
         }
 
         self.sync_legacy_input();
+        self.refresh_correct_chars();
         self.refresh_final_mistakes();
         self.update_current_index();
         self.update_completion_status();
@@ -454,6 +455,7 @@ impl TypingSession {
         }
 
         self.sync_legacy_input();
+        self.refresh_correct_chars();
         self.refresh_final_mistakes();
         self.update_current_index();
     }
@@ -466,6 +468,25 @@ impl TypingSession {
 
     fn refresh_final_mistakes(&mut self) {
         self.mistakes = self.final_mistakes();
+    }
+
+    fn refresh_correct_chars(&mut self) {
+        self.correct_chars = self.final_correct_chars();
+    }
+
+    fn final_correct_chars(&self) -> usize {
+        let target_words = self
+            .words
+            .iter()
+            .map(|word| word.target.as_str())
+            .collect::<Vec<_>>();
+        let typed_words = self
+            .words
+            .iter()
+            .map(|word| word.input.as_str())
+            .collect::<Vec<_>>();
+
+        calculate_correct_chars(&target_words, &typed_words)
     }
 
     fn final_mistakes(&self) -> usize {
@@ -617,12 +638,12 @@ mod tests {
     }
 
     #[test]
-    fn correct_character_increments_correct_chars() {
+    fn partial_word_does_not_count_as_correct_chars() {
         let mut session = TypingSession::new(TestMode::Time(30), "hello".to_owned());
 
         session.input_char('h');
 
-        assert_eq!(session.correct_chars, 1);
+        assert_eq!(session.correct_chars, 0);
         assert_eq!(session.incorrect_chars, 0);
         assert_eq!(session.mistakes, 0);
     }
@@ -648,7 +669,7 @@ mod tests {
 
         assert_eq!(session.typed_input, "h");
         assert_eq!(session.current_index, 1);
-        assert_eq!(session.correct_chars, 2);
+        assert_eq!(session.correct_chars, 0);
     }
 
     #[test]
@@ -660,7 +681,7 @@ mod tests {
         session.backspace();
 
         assert_eq!(session.typed_input, "h");
-        assert_eq!(session.correct_chars, 1);
+        assert_eq!(session.correct_chars, 0);
         assert_eq!(session.incorrect_chars, 1);
         assert_eq!(session.mistakes, 0);
     }
@@ -865,6 +886,61 @@ mod tests {
         assert_eq!(result.mistakes, 0);
         assert!(result.accuracy < 100.0);
         assert_eq!(result.accuracy, 80.0);
+    }
+
+    #[test]
+    fn result_wpm_counts_correct_words_and_spaces() {
+        let mut session = TypingSession::new(TestMode::Words(2), "hello world".to_owned());
+
+        for character in "hello world".chars() {
+            session.input_char(character);
+        }
+        let finished_at = Instant::now();
+        session.started_at = Some(finished_at - Duration::from_secs(6));
+        session.finished_at = Some(finished_at);
+
+        let result = session.result().expect("finished result");
+        assert_eq!(result.correct_chars, 11);
+        assert_eq!(result.wpm, 22.0);
+    }
+
+    #[test]
+    fn result_wpm_counts_last_word_without_trailing_space() {
+        let mut session = TypingSession::new(TestMode::Words(2), "hello world".to_owned());
+
+        for character in "hello world".chars() {
+            session.input_char(character);
+        }
+
+        let result = session.result().expect("finished result");
+        assert_eq!(result.correct_chars, 11);
+    }
+
+    #[test]
+    fn corrected_mistake_counts_as_correct_for_wpm() {
+        let mut session = TypingSession::new(TestMode::Words(1), "form".to_owned());
+
+        session.input_char('f');
+        session.input_char('x');
+        session.backspace();
+        for character in "orm".chars() {
+            session.input_char(character);
+        }
+
+        let result = session.result().expect("finished result");
+        assert_eq!(result.correct_chars, 4);
+    }
+
+    #[test]
+    fn incorrect_word_does_not_contribute_to_result_wpm() {
+        let mut session = TypingSession::new(TestMode::Words(2), "hello world".to_owned());
+
+        for character in "hello wurld ".chars() {
+            session.input_char(character);
+        }
+
+        let result = session.result().expect("finished result");
+        assert_eq!(result.correct_chars, 6);
     }
 
     #[test]
