@@ -1,8 +1,8 @@
 [package]
-name = "ttp"
-version = "0.2.4"
+name = "terminal-typer"
+version = "0.2.5"
 edition = "2021"
-description = "A terminal typing practice app inspired by Monkeytype."
+description = "A terminal-based typing trainer."
 license = "MIT"
 
 [[bin]]
