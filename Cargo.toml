@@ -4,6 +4,10 @@ version = "0.2.5"
 edition = "2021"
 description = "A terminal-based typing trainer."
 license = "MIT"
+repository = "https://github.com/BL4Y3-exe/ttp"
+readme = "README.md"
+keywords = ["typing", "terminal", "tui", "cli"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "ttp"
