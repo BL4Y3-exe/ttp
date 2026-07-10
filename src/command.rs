@@ -1,8 +1,10 @@
+use crate::core::language_modes::LanguageMode;
 use crate::core::test_session::TestMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     SetMode(TestMode),
+    SetLanguageMode(LanguageMode),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +18,10 @@ pub fn parse_command(input: &str) -> Result<Command, CommandError> {
 
     if trimmed.is_empty() {
         return Err(CommandError::Empty);
+    }
+
+    if let Some(language_mode) = LanguageMode::from_label(trimmed) {
+        return Ok(Command::SetLanguageMode(language_mode));
     }
 
     match trimmed {
@@ -34,6 +40,7 @@ pub fn parse_command(input: &str) -> Result<Command, CommandError> {
 #[cfg(test)]
 mod tests {
     use super::{parse_command, Command, CommandError};
+    use crate::core::language_modes::{Language, LanguageMode, LanguageVariant};
     use crate::core::test_session::TestMode;
 
     #[test]
@@ -114,6 +121,50 @@ mod tests {
         assert_eq!(
             parse_command("abc"),
             Err(CommandError::Unknown("abc".to_owned()))
+        );
+    }
+
+    #[test]
+    fn parses_language_modes() {
+        assert_eq!(
+            parse_command(":english"),
+            Ok(Command::SetLanguageMode(LanguageMode::new(
+                Language::English,
+                LanguageVariant::Basic
+            )))
+        );
+        assert_eq!(
+            parse_command("russian-ext"),
+            Ok(Command::SetLanguageMode(LanguageMode::new(
+                Language::Russian,
+                LanguageVariant::Extended
+            )))
+        );
+        assert_eq!(
+            parse_command(":azerbaijani-hard"),
+            Ok(Command::SetLanguageMode(LanguageMode::new(
+                Language::Azerbaijani,
+                LanguageVariant::Hard
+            )))
+        );
+        assert_eq!(
+            parse_command(":spanish-hard"),
+            Ok(Command::SetLanguageMode(LanguageMode::new(
+                Language::Spanish,
+                LanguageVariant::Hard
+            )))
+        );
+    }
+
+    #[test]
+    fn rejects_language_short_aliases() {
+        assert_eq!(
+            parse_command(":en"),
+            Err(CommandError::Unknown("en".to_owned()))
+        );
+        assert_eq!(
+            parse_command(":ru"),
+            Err(CommandError::Unknown("ru".to_owned()))
         );
     }
 }

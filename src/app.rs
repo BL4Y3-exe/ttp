@@ -1,4 +1,5 @@
 use crate::command::{parse_command, Command, CommandError};
+use crate::core::language_modes::LanguageMode;
 use crate::core::test_session::{SessionStatus, TestMode, TestResult, TypingSession};
 use crate::core::text_generator::generate_text;
 use crate::storage::config::{load_config, save_config, AppConfig};
@@ -26,6 +27,7 @@ pub struct App {
     pub input_mode: InputMode,
     pub command_input: String,
     pub current_mode: TestMode,
+    pub current_language_mode: LanguageMode,
     pub session: Option<TypingSession>,
     pub last_result: Option<TestResult>,
     pub command_error: Option<String>,
@@ -41,6 +43,7 @@ pub struct App {
 impl Default for App {
     fn default() -> Self {
         let mode = TestMode::default();
+        let language_mode = LanguageMode::default();
 
         Self {
             should_quit: false,
@@ -48,7 +51,8 @@ impl Default for App {
             input_mode: InputMode::Normal,
             command_input: String::new(),
             current_mode: mode,
-            session: Some(TypingSession::new(mode, generate_text(mode))),
+            current_language_mode: language_mode,
+            session: Some(TypingSession::new(mode, generate_text(mode, language_mode))),
             last_result: None,
             command_error: None,
             config: AppConfig::default(),
@@ -75,6 +79,8 @@ impl App {
         };
 
         let current_mode = TestMode::from_label(&config.last_selected_mode).unwrap_or_default();
+        let current_language_mode =
+            LanguageMode::from_label(&config.language_mode).unwrap_or_default();
 
         let database = match Database::open().and_then(|database| {
             database.init()?;
@@ -93,9 +99,10 @@ impl App {
             input_mode: InputMode::Normal,
             command_input: String::new(),
             current_mode,
+            current_language_mode,
             session: Some(TypingSession::new(
                 current_mode,
-                generate_text(current_mode),
+                generate_text(current_mode, current_language_mode),
             )),
             last_result: None,
             command_error: storage_error,
@@ -113,7 +120,7 @@ impl App {
         self.command_error = None;
         self.session = Some(TypingSession::new(
             self.current_mode,
-            generate_text(self.current_mode),
+            generate_text(self.current_mode, self.current_language_mode),
         ));
         self.result_saved = false;
         self.page = Page::SpeedTest;
@@ -131,7 +138,7 @@ impl App {
         if needs_new_session {
             self.session = Some(TypingSession::new(
                 self.current_mode,
-                generate_text(self.current_mode),
+                generate_text(self.current_mode, self.current_language_mode),
             ));
             self.result_saved = false;
         }
@@ -192,6 +199,18 @@ impl App {
                 self.start_new_session();
                 self.command_error = config_error;
             }
+            Ok(Command::SetLanguageMode(language_mode)) => {
+                self.current_language_mode = language_mode;
+                self.config.language_mode = language_mode.label().to_owned();
+                let config_error = if let Err(error) = save_config(&self.config) {
+                    Some(format!("config error: {error:#}"))
+                } else {
+                    None
+                };
+                self.command_input.clear();
+                self.start_new_session();
+                self.command_error = config_error;
+            }
             Err(error) => {
                 self.command_input.clear();
                 self.command_error = Some(command_error_message(error));
@@ -205,7 +224,8 @@ impl App {
             return;
         };
 
-        let saved_result = SavedTestResult::from_test_result(result);
+        let saved_result =
+            SavedTestResult::from_test_result_with_language(result, self.current_language_mode);
 
         if let Err(error) = database.insert_test_result(&saved_result) {
             self.command_error = Some(format!("storage error: {error:#}"));

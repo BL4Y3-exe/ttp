@@ -263,7 +263,7 @@ fn render_personal_bests(
         " Time Modes ",
         "time",
         TIME_MODES,
-        &app.all_results,
+        &english_basic_results(&app.all_results),
         palette,
     );
     render_best_group(
@@ -272,7 +272,7 @@ fn render_personal_bests(
         " Word Modes ",
         "words",
         WORD_MODES,
-        &app.all_results,
+        &english_basic_results(&app.all_results),
         palette,
     );
 }
@@ -418,6 +418,14 @@ fn today_results(results: &[SavedTestResult]) -> Vec<SavedTestResult> {
         .collect()
 }
 
+fn english_basic_results(results: &[SavedTestResult]) -> Vec<SavedTestResult> {
+    results
+        .iter()
+        .filter(|result| result.language_mode == "english")
+        .cloned()
+        .collect()
+}
+
 fn personal_best_for_mode<'a>(
     results: &'a [SavedTestResult],
     mode_type: &str,
@@ -450,8 +458,8 @@ mod tests {
     use ratatui::layout::Rect;
 
     use super::{
-        compare_personal_best, dashboard_layout, history_mode_label, personal_best_for_mode,
-        scroll_max_for_area, today_results, SummaryStats,
+        compare_personal_best, dashboard_layout, english_basic_results, history_mode_label,
+        personal_best_for_mode, scroll_max_for_area, today_results, SummaryStats,
     };
     use crate::app::App;
     use crate::storage::models::SavedTestResult;
@@ -474,6 +482,7 @@ mod tests {
             incorrect_chars: 1,
             total_typed_chars: 101,
             elapsed_seconds: 30.0,
+            language_mode: "english".to_owned(),
             created_at: Local::now() + Duration::days(days_offset),
         }
     }
@@ -531,6 +540,22 @@ mod tests {
 
         assert_eq!(best.wpm, 90.0);
         assert_eq!(best.mode_type, "time");
+    }
+
+    #[test]
+    fn personal_best_source_only_includes_english_basic_results() {
+        let mut english = saved_result("time", 30, 90.0, 98.0, 0);
+        english.language_mode = "english".to_owned();
+        let mut russian = saved_result("time", 30, 140.0, 99.0, 0);
+        russian.language_mode = "russian".to_owned();
+        let mut english_hard = saved_result("time", 30, 130.0, 99.0, 0);
+        english_hard.language_mode = "english-hard".to_owned();
+
+        let results = english_basic_results(&[english, russian, english_hard]);
+        let best = personal_best_for_mode(&results, "time", 30).expect("best");
+
+        assert_eq!(best.wpm, 90.0);
+        assert_eq!(results.len(), 1);
     }
 
     #[test]
